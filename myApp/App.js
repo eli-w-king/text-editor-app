@@ -578,35 +578,9 @@ function EditorScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
-        {/* Debug Overlay */}
-        {debugMode && (
-          <TouchableOpacity 
-            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10 }} 
-            activeOpacity={1} 
-            onPress={() => setDebugMode(false)} 
-          />
-        )}
-
-        {/* Debug Panel */}
-        {debugMode && (
-          <View style={styles.debugPanel}>
-            <View style={styles.debugActions}>
-              <TouchableOpacity style={styles.resetButton} onPress={resetApp}>
-                <Text style={styles.resetButtonText}>Reset</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.debugScroll}>
-              <Text style={styles.debugLabel}>Sent to Model:</Text>
-              <Text style={styles.debugText} selectable>
-                {debugData.sentMessages ? JSON.stringify(debugData.sentMessages, null, 2) : 'No request yet'}
-              </Text>
-              <Text style={[styles.debugLabel, { marginTop: 12 }]}>Raw Response:</Text>
-              <Text style={styles.debugText} selectable>
-                {debugData.rawResponse ? JSON.stringify(debugData.rawResponse, null, 2) : 'No response yet'}
-              </Text>
-            </ScrollView>
-          </View>
-        )}
+        {/* Debug Overlay - Removed */}
+        
+        {/* Debug Panel - Removed */}
 
         <FloatingMenu 
           debugMode={debugMode}
@@ -616,6 +590,8 @@ function EditorScreen() {
           theme={theme}
           setTheme={setTheme}
           toggleTheme={toggleTheme}
+          resetApp={resetApp}
+          debugData={debugData}
         />
 
       </SafeAreaView>

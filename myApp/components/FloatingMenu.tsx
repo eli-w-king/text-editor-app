@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { View, TouchableOpacity, StyleSheet, Animated, Text, Easing } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, TouchableOpacity, StyleSheet, Animated, Text, Easing, ScrollView, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface FloatingMenuProps {
@@ -10,13 +10,27 @@ interface FloatingMenuProps {
   theme: 'light' | 'dark' | 'ultramarine' | 'orange';
   setTheme: (theme: 'light' | 'dark' | 'ultramarine' | 'orange') => void;
   toggleTheme: () => void;
+  resetApp?: () => void;
+  debugData?: { sentMessages: any; rawResponse: any };
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
   const animation = useRef(new Animated.Value(0)).current;
   const expansionAnim = useRef(new Animated.Value(0)).current;
+  const debugAnim = useRef(new Animated.Value(0)).current;
+  const screenWidth = Dimensions.get('window').width;
+  const debugPanelWidth = screenWidth - 110; // 20 (left) + 60 (menu) + 10 (gap) + 20 (right margin)
+
+  useEffect(() => {
+    Animated.timing(debugAnim, {
+      toValue: debugMode ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
+      easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+    }).start();
+  }, [debugMode]);
 
   const getThemeColors = () => {
     switch (theme) {
@@ -213,6 +227,55 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
         </Animated.View>
 
       </Animated.View>
+
+      {/* Debug Panel - Positioned to the right */}
+      <Animated.View style={[
+          styles.debugPanel, 
+          { 
+              backgroundColor: bg,
+              opacity: debugAnim,
+              height: containerHeight, // Match menu height
+              width: debugPanelWidth,
+              transform: [
+                  { translateX: debugAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) },
+                  { scale: debugAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }
+              ],
+          }
+      ]} pointerEvents={debugMode ? 'auto' : 'none'}>
+          <View style={styles.debugHeader}>
+              <Text style={[styles.debugTitle, { color: labelColor }]}>Debug Info</Text>
+              <TouchableOpacity style={styles.resetButton} onPress={resetApp}>
+                  <Text style={styles.resetButtonText}>Reset</Text>
+              </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.debugContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.debugRow}>
+                  <Text style={[styles.debugLabel, { color: labelColor }]}>LLM Status:</Text>
+                  <Text style={[styles.debugValue, { color: iconColor }]}>{llmStatus}</Text>
+              </View>
+              <View style={styles.debugRow}>
+                  <Text style={[styles.debugLabel, { color: labelColor }]}>Theme:</Text>
+                  <Text style={[styles.debugValue, { color: iconColor }]}>{theme}</Text>
+              </View>
+              {debugData && (
+                <>
+                  <View style={styles.debugRow}>
+                      <Text style={[styles.debugLabel, { color: labelColor }]}>Sent to Model:</Text>
+                      <Text style={[styles.debugValue, { color: iconColor }]} selectable>
+                        {debugData.sentMessages ? JSON.stringify(debugData.sentMessages, null, 2) : 'No request yet'}
+                      </Text>
+                  </View>
+                  <View style={styles.debugRow}>
+                      <Text style={[styles.debugLabel, { color: labelColor }]}>Raw Response:</Text>
+                      <Text style={[styles.debugValue, { color: iconColor }]} selectable>
+                        {debugData.rawResponse ? JSON.stringify(debugData.rawResponse, null, 2) : 'No response yet'}
+                      </Text>
+                  </View>
+                </>
+              )}
+          </ScrollView>
+      </Animated.View>
+
     </View>
   );
 }
@@ -223,6 +286,16 @@ const styles = StyleSheet.create({
     bottom: 40,
     left: 20,
     zIndex: 100,
+    // Remove shadow from container as children have shadows now? 
+    // Or keep it but it might affect layout. 
+    // Actually, container wraps everything.
+  },
+  menuContainer: {
+    width: 60,
+    backgroundColor: 'white',
+    borderRadius: 30,
+    alignItems: 'center',
+    // Add shadow here instead of container if we want separate shadows
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -231,13 +304,63 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 4,
+    zIndex: 20, // Above debug panel
   },
-  menuContainer: {
-    width: 60,
-    backgroundColor: 'white',
-    borderRadius: 30,
-    overflow: 'hidden',
+  debugPanel: {
+    position: 'absolute',
+    left: 70, // 60 width + 10 gap
+    bottom: 0,
+    // width removed here as it's set dynamically
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: 10,
+  },
+  debugHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  debugTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  resetButton: {
+    backgroundColor: '#FF3B30',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  resetButtonText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  debugContent: {
+    flex: 1,
+  },
+  debugRow: {
+    marginBottom: 8,
+  },
+  debugLabel: {
+    fontSize: 10,
+    marginBottom: 2,
+    opacity: 0.7,
+  },
+  debugValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   colorOption: {
     width: 36,
