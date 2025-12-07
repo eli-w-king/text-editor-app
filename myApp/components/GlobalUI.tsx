@@ -8,7 +8,8 @@ import {
   Platform, 
   KeyboardAvoidingView, 
   ScrollView,
-  StyleSheet
+  StyleSheet,
+  Alert
 } from 'react-native';
 import { useAppContext } from '@/context/AppContext';
 import FloatingMenu from '@/components/FloatingMenu';
@@ -40,6 +41,29 @@ export default function GlobalUI() {
 
   const handleSaveKey = () => {
     saveApiKey(tempKey);
+  };
+
+  const handleConnectPress = () => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Enter OpenRouter API Key',
+        undefined,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Save & Connect',
+            onPress: (key) => saveApiKey(key || ''),
+          },
+        ],
+        'secure-text',
+        apiKey
+      );
+    } else {
+      setShowKeyModal(true);
+    }
   };
 
   return (
@@ -74,43 +98,15 @@ export default function GlobalUI() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Debug Overlay */}
-      {debugMode && (
-        <TouchableOpacity 
-          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10 }} 
-          activeOpacity={1} 
-          onPress={toggleDebug} 
-        />
-      )}
-
-      {/* Debug Panel */}
-      {debugMode && (
-        <View style={appStyles.debugPanel}>
-          <View style={appStyles.debugActions}>
-            <TouchableOpacity style={appStyles.resetButton} onPress={resetApp}>
-              <Text style={appStyles.resetButtonText}>Reset</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={appStyles.debugScroll}>
-            <Text style={appStyles.debugLabel}>Debug Info:</Text>
-            <Text style={appStyles.debugText}>
-              LLM Status: {llmStatus}
-            </Text>
-            <Text style={appStyles.debugText}>
-              Theme: {theme}
-            </Text>
-          </ScrollView>
-        </View>
-      )}
-
       <FloatingMenu 
         debugMode={debugMode}
         toggleDebug={toggleDebug}
         llmStatus={llmStatus}
-        onConnectPress={() => setShowKeyModal(true)}
+        onConnectPress={handleConnectPress}
         theme={theme}
         setTheme={setTheme}
         toggleTheme={toggleTheme}
+        resetApp={resetApp}
       />
     </>
   );

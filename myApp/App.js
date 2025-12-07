@@ -226,14 +226,38 @@ function EditorScreen() {
     }
   };
 
-  const saveApiKey = async () => {
+  const saveApiKey = async (keyToSave) => {
+    const key = typeof keyToSave === 'string' ? keyToSave : tempKey;
     try {
-      await AsyncStorage.setItem(STORAGE_KEY_API, tempKey);
-      setApiKey(tempKey);
+      await AsyncStorage.setItem(STORAGE_KEY_API, key);
+      setApiKey(key);
       setShowKeyModal(false);
-      validateConnection(tempKey);
+      validateConnection(key);
     } catch (e) {
       Alert.alert('Error', 'Could not save API key');
+    }
+  };
+
+  const handleConnectPress = () => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Enter OpenRouter API Key',
+        null,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Save & Connect',
+            onPress: (key) => saveApiKey(key),
+          },
+        ],
+        'secure-text',
+        apiKey
+      );
+    } else {
+      setShowKeyModal(true);
     }
   };
 
@@ -578,44 +602,20 @@ function EditorScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
-        {/* Debug Overlay */}
-        {debugMode && (
-          <TouchableOpacity 
-            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10 }} 
-            activeOpacity={1} 
-            onPress={() => setDebugMode(false)} 
-          />
-        )}
-
-        {/* Debug Panel */}
-        {debugMode && (
-          <View style={styles.debugPanel}>
-            <View style={styles.debugActions}>
-              <TouchableOpacity style={styles.resetButton} onPress={resetApp}>
-                <Text style={styles.resetButtonText}>Reset</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.debugScroll}>
-              <Text style={styles.debugLabel}>Sent to Model:</Text>
-              <Text style={styles.debugText} selectable>
-                {debugData.sentMessages ? JSON.stringify(debugData.sentMessages, null, 2) : 'No request yet'}
-              </Text>
-              <Text style={[styles.debugLabel, { marginTop: 12 }]}>Raw Response:</Text>
-              <Text style={styles.debugText} selectable>
-                {debugData.rawResponse ? JSON.stringify(debugData.rawResponse, null, 2) : 'No response yet'}
-              </Text>
-            </ScrollView>
-          </View>
-        )}
+        {/* Debug Overlay - Removed */}
+        
+        {/* Debug Panel - Removed */}
 
         <FloatingMenu 
           debugMode={debugMode}
           toggleDebug={() => setDebugMode(!debugMode)}
           llmStatus={llmStatus}
-          onConnectPress={() => setShowKeyModal(true)}
+          onConnectPress={handleConnectPress}
           theme={theme}
           setTheme={setTheme}
           toggleTheme={toggleTheme}
+          resetApp={resetApp}
+          debugData={debugData}
         />
 
       </SafeAreaView>
