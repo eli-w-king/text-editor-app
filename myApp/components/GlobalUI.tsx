@@ -8,7 +8,8 @@ import {
   Platform, 
   KeyboardAvoidingView, 
   ScrollView,
-  StyleSheet
+  StyleSheet,
+  Alert
 } from 'react-native';
 import { useAppContext } from '@/context/AppContext';
 import FloatingMenu from '@/components/FloatingMenu';
@@ -40,6 +41,29 @@ export default function GlobalUI() {
 
   const handleSaveKey = () => {
     saveApiKey(tempKey);
+  };
+
+  const handleConnectPress = () => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Enter OpenRouter API Key',
+        undefined,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Save & Connect',
+            onPress: (key) => saveApiKey(key || ''),
+          },
+        ],
+        'secure-text',
+        apiKey
+      );
+    } else {
+      setShowKeyModal(true);
+    }
   };
 
   return (
@@ -78,7 +102,7 @@ export default function GlobalUI() {
         debugMode={debugMode}
         toggleDebug={toggleDebug}
         llmStatus={llmStatus}
-        onConnectPress={() => setShowKeyModal(true)}
+        onConnectPress={handleConnectPress}
         theme={theme}
         setTheme={setTheme}
         toggleTheme={toggleTheme}

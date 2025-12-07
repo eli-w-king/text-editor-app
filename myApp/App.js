@@ -226,14 +226,38 @@ function EditorScreen() {
     }
   };
 
-  const saveApiKey = async () => {
+  const saveApiKey = async (keyToSave) => {
+    const key = typeof keyToSave === 'string' ? keyToSave : tempKey;
     try {
-      await AsyncStorage.setItem(STORAGE_KEY_API, tempKey);
-      setApiKey(tempKey);
+      await AsyncStorage.setItem(STORAGE_KEY_API, key);
+      setApiKey(key);
       setShowKeyModal(false);
-      validateConnection(tempKey);
+      validateConnection(key);
     } catch (e) {
       Alert.alert('Error', 'Could not save API key');
+    }
+  };
+
+  const handleConnectPress = () => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Enter OpenRouter API Key',
+        null,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Save & Connect',
+            onPress: (key) => saveApiKey(key),
+          },
+        ],
+        'secure-text',
+        apiKey
+      );
+    } else {
+      setShowKeyModal(true);
     }
   };
 
@@ -586,7 +610,7 @@ function EditorScreen() {
           debugMode={debugMode}
           toggleDebug={() => setDebugMode(!debugMode)}
           llmStatus={llmStatus}
-          onConnectPress={() => setShowKeyModal(true)}
+          onConnectPress={handleConnectPress}
           theme={theme}
           setTheme={setTheme}
           toggleTheme={toggleTheme}

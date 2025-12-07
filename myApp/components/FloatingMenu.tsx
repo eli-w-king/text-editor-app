@@ -54,7 +54,8 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
     }).start();
     setIsOpen(!isOpen);
     
-    if (isOpen && showThemeOptions) {
+    if (isOpen) {
+      if (showThemeOptions) {
         setShowThemeOptions(false);
         Animated.timing(expansionAnim, {
             toValue: 0,
@@ -62,6 +63,10 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
             useNativeDriver: false,
             easing: Easing.bezier(0.4, 0.0, 0.2, 1),
         }).start();
+      }
+      if (debugMode) {
+        toggleDebug();
+      }
     }
   };
 
