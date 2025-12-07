@@ -506,7 +506,7 @@ function EditorScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
-            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+            <StatusBar style={(theme === 'dark' || theme === 'ultramarine' || theme === 'orange' || theme === 'plum') ? 'light' : 'dark'} />
             
             {/* Navigation Pills */}
             <View style={styles.navContainer}>
@@ -614,6 +614,7 @@ function EditorScreen() {
           llmStatus={llmStatus}
           onConnectPress={() => setShowKeyModal(true)}
           theme={theme}
+          setTheme={setTheme}
           toggleTheme={toggleTheme}
         />
 

@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 
 interface AppContextType {
-  theme: 'light' | 'dark';
+  theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum';
+  setTheme: (theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum') => void;
   toggleTheme: () => void;
   debugMode: boolean;
   toggleDebug: () => void;
@@ -23,7 +24,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const STORAGE_KEY_API = 'llm_api_key';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'ultramarine' | 'orange' | 'plum'>('light');
   const [debugMode, setDebugMode] = useState(false);
   const [llmStatus, setLlmStatus] = useState('disconnected');
   const [apiKey, setApiKey] = useState('');
@@ -98,6 +99,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       theme,
+      setTheme,
       toggleTheme,
       debugMode,
       toggleDebug,

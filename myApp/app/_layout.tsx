@@ -8,15 +8,16 @@ import GlobalUI from '@/components/GlobalUI';
 
 function RootLayoutNav() {
   const { theme } = useAppContext();
+  const isDark = theme === 'dark' || theme === 'ultramarine' || theme === 'orange' || theme === 'plum';
 
   return (
-    <ThemeProvider value={theme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="note/[id]" options={{ headerShown: false }} />
       </Stack>
       <GlobalUI />
-      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
     </ThemeProvider>
   );
 }

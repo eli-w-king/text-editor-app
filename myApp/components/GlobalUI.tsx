@@ -17,6 +17,7 @@ import { styles as appStyles } from '@/styles';
 export default function GlobalUI() {
   const { 
     theme, 
+    setTheme,
     toggleTheme, 
     debugMode, 
     toggleDebug, 
@@ -108,6 +109,7 @@ export default function GlobalUI() {
         llmStatus={llmStatus}
         onConnectPress={() => setShowKeyModal(true)}
         theme={theme}
+        setTheme={setTheme}
         toggleTheme={toggleTheme}
       />
     </>
