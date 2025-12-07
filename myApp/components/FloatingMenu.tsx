@@ -195,13 +195,12 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
              <TouchableOpacity onPress={onConnectPress} style={styles.optionItem}>
                <View style={[
                  styles.iconCircle, 
-                 { backgroundColor: secondaryBg },
-                 llmStatus === 'connected' && styles.activeConnect
+                 { backgroundColor: secondaryBg }
                ]}>
                   <Ionicons 
                     name={llmStatus === 'connected' ? "cloud-done-outline" : "cloud-offline-outline"} 
                     size={24} 
-                    color={llmStatus === 'connected' ? "white" : iconColor} 
+                    color={iconColor} 
                   />
                </View>
                <Text style={[styles.label, { color: labelColor }]}>API</Text>
@@ -438,9 +437,6 @@ const styles = StyleSheet.create({
   },
   activeDebug: {
     backgroundColor: '#000',
-  },
-  activeConnect: {
-    backgroundColor: '#34C759',
   },
   label: {
     fontSize: 10,
