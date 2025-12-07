@@ -140,7 +140,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                  <Animated.View style={{ position: 'absolute', opacity: themeButtonOpacity, alignItems: 'center' }} pointerEvents={showThemeOptions ? 'none' : 'auto'}>
                     <TouchableOpacity onPress={toggleThemeOptions} style={styles.optionItem}>
                         <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
-                            <Ionicons name="color-palette-outline" size={24} color={iconColor} />
+                            <Ionicons name="contrast-outline" size={24} color={iconColor} />
                         </View>
                         <Text style={[styles.label, { color: labelColor }]}>Theme</Text>
                     </TouchableOpacity>
@@ -164,7 +164,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                  debugMode && { backgroundColor: theme === 'light' ? '#000' : '#fff' }
                ]}>
                   <Ionicons 
-                    name="bug-outline" 
+                    name="code-slash-outline" 
                     size={24} 
                     color={debugMode ? (theme === 'light' ? 'white' : 'black') : iconColor} 
                   />
