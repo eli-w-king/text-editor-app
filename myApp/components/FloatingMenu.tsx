@@ -42,9 +42,30 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
     outputRange: [0, 0, 1],
   });
 
-  const menuIconOpacity = animation.interpolate({
-    inputRange: [0, 0.5],
-    outputRange: [1, 0],
+  // Morphing Button Interpolations
+  const buttonRotation = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '45deg']
+  });
+
+  const buttonSize = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [60, 40]
+  });
+
+  const buttonRadius = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [30, 20]
+  });
+
+  const buttonBottom = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 10]
+  });
+  
+  const buttonBg = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(0,0,0,0)', secondaryBg] 
   });
 
   return (
@@ -95,16 +116,26 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
              </TouchableOpacity>
            </View>
 
-           {/* Close Button at Bottom */}
-           <TouchableOpacity onPress={toggleMenu} style={[styles.closeButton, { backgroundColor: secondaryBg }]}>
-             <Ionicons name="close" size={24} color={iconColor} />
-           </TouchableOpacity>
+           {/* Spacer to preserve layout where close button was */}
+           <View style={{ height: 50 }} />
         </Animated.View>
 
-        {/* Content when Closed (Menu Icon) */}
-        <Animated.View style={[styles.closedContent, { opacity: menuIconOpacity }]} pointerEvents={isOpen ? 'none' : 'auto'}>
-          <TouchableOpacity onPress={toggleMenu} style={styles.menuButton}>
-            <Ionicons name="menu" size={28} color={iconColor} />
+        {/* Shared Morphing Button */}
+        <Animated.View style={{
+            position: 'absolute',
+            bottom: buttonBottom,
+            width: buttonSize,
+            height: buttonSize,
+            borderRadius: buttonRadius,
+            backgroundColor: buttonBg,
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10
+        }}>
+          <TouchableOpacity onPress={toggleMenu} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.View style={{ transform: [{ rotate: buttonRotation }] }}>
+                <Ionicons name="add" size={28} color={iconColor} />
+            </Animated.View>
           </TouchableOpacity>
         </Animated.View>
 
