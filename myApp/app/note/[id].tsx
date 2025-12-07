@@ -1,31 +1,25 @@
-import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Text, 
   TextInput, 
   View, 
-  TouchableOpacity, 
-  Modal, 
-  Platform, 
-  KeyboardAvoidingView, 
-  Alert,
   ScrollView,
   TouchableWithoutFeedback,
   Keyboard,
+  Alert,
+  BackHandler
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SYSTEM_PROMPT } from './constants/prompts';
-import { Colors } from './constants/theme';
-import { styles } from './styles';
-import { streamSingleFill, streamResponse, streamDelete } from './utils/animations';
-import FloatingMenu from './components/FloatingMenu';
-
-
-const STORAGE_KEY_API = 'llm_api_key';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { SYSTEM_PROMPT } from '@/constants/prompts';
+import { Colors } from '@/constants/theme';
+import { styles } from '@/styles';
+import { streamSingleFill, streamResponse, streamDelete } from '@/utils/animations';
+import { useAppContext } from '@/context/AppContext';
+import { useNotes, Note } from '@/hooks/useNotes';
 
 // Extracts string content regardless of OpenRouter payload shape (string or array chunks).
-const coerceMessageContent = (messageContent) => {
+const coerceMessageContent = (messageContent: any) => {
   if (typeof messageContent === 'string') {
     return messageContent;
   }
@@ -56,7 +50,7 @@ const coerceMessageContent = (messageContent) => {
 };
 
 // Normalizes raw LLM output to strip URLs/citations and tidy punctuation artifacts.
-const sanitizeModelContent = (rawInput) => {
+const sanitizeModelContent = (rawInput: any) => {
   if (typeof rawInput !== 'string') {
     return '';
   }
@@ -64,19 +58,18 @@ const sanitizeModelContent = (rawInput) => {
   let cleaned = rawInput;
 
   // Remove ALL brackets that look like citations (contain TLDs, URLs, or domain-like text).
-  // Catches [theblock.co], [example.com/path], [1], [Source: ...], etc.
   cleaned = cleaned
     .replace(/\s*\[[^\]]*\b\w+\.\s*(?:com?|net|org|io|ai|app|news|tv|fm|uk|us|au|de|fr|jp|co)\b[^\]]*\]/gi, '')
     .replace(/\s*\[[^\]]*(?:https?:\/\/|www\.)[^\]]*\]/gis, '')
     .replace(/\s*\[[0-9]+\]/g, '')
-    .replace(/\s*\[\s*\]/g, ''); // Remove empty []
+    .replace(/\s*\[\s*\]/g, ''); 
 
   // Remove ALL parentheses that look like citations.
   cleaned = cleaned
     .replace(/\s*\([^)]*\b\w+\.\s*(?:com?|net|org|io|ai|app|news|tv|fm|uk|us|au|de|fr|jp|co)\b[^)]*\)/gi, '')
     .replace(/\s*\([^)]*(?:https?:\/\/|www\.)[^)]*\)/gis, '')
     .replace(/\s*\((?:source|via|according to|reported by)[^)]*\)/gi, '')
-    .replace(/\s*\(\s*\)/g, ''); // Remove empty ()
+    .replace(/\s*\(\s*\)/g, ''); 
 
   // Remove bare URLs and www references anywhere.
   cleaned = cleaned
@@ -109,40 +102,71 @@ const sanitizeModelContent = (rawInput) => {
   return cleaned.trim();
 };
 
-export default function App() {
-  return (
-    <SafeAreaProvider>
-      <EditorScreen />
-    </SafeAreaProvider>
-  );
-}
-
-function EditorScreen() {
-  const insets = useSafeAreaInsets();
+export default function NoteEditor() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const { theme, apiKey, llmStatus } = useAppContext();
+  const { notes, saveNote, deleteNote } = useNotes();
+  
   const [text, setText] = useState('');
   const [title, setTitle] = useState('New Note');
   const [lastTitleGenLength, setLastTitleGenLength] = useState(0);
-  const [apiKey, setApiKey] = useState('');
-  const [llmStatus, setLlmStatus] = useState('disconnected'); // disconnected, connecting, connected, error
-  const [showKeyModal, setShowKeyModal] = useState(false);
-  const [tempKey, setTempKey] = useState('');
-  const [debugMode, setDebugMode] = useState(false);
-  const [debugData, setDebugData] = useState({ sentMessages: null, rawResponse: null });
-  const [theme, setTheme] = useState('light');
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
-
-  // Load API Key on mount
+  // Load note
   useEffect(() => {
-    loadSettings();
-    const timer = setInterval(() => {
-      setCurrentDate(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+    if (id && id !== 'new' && notes.length > 0) {
+      const note = notes.find(n => n.id === id);
+      if (note) {
+        setText(note.content);
+        setTitle(note.title);
+      }
+    }
+    setIsLoaded(true);
+  }, [id, notes]);
+
+  // Auto-save logic
+  const saveCurrentNote = useCallback(async () => {
+    if (!isLoaded) return;
+    
+    const trimmedText = text.trim();
+    if (trimmedText.length === 0) {
+      if (id && id !== 'new') {
+        await deleteNote(id);
+      }
+      return;
+    }
+
+    const noteId = (id && id !== 'new') ? id : Date.now().toString();
+    const newNote: Note = {
+      id: noteId,
+      title: title,
+      content: text,
+      updatedAt: Date.now(),
+    };
+    await saveNote(newNote);
+  }, [text, title, id, isLoaded, saveNote, deleteNote]);
+
+  // Save on unmount or back
+  useEffect(() => {
+    const onBackPress = () => {
+      saveCurrentNote().then(() => {
+        if (router.canGoBack()) {
+          router.back();
+        } else {
+          router.replace('/');
+        }
+      });
+      return true; // Prevent default behavior
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+    return () => {
+      saveCurrentNote();
+      subscription.remove();
+    };
+  }, [saveCurrentNote, router]);
 
   // Auto-generate title when text changes significantly
   useEffect(() => {
@@ -192,74 +216,13 @@ function EditorScreen() {
     }
   };
 
-
-  const loadSettings = async () => {
-    try {
-      const storedKey = await AsyncStorage.getItem(STORAGE_KEY_API);
-      if (storedKey) {
-        setApiKey(storedKey);
-        validateConnection(storedKey);
-      }
-    } catch (e) {
-      console.error('Failed to load settings', e);
-    }
-  };
-
-  const validateConnection = async (key) => {
-    setLlmStatus('connecting');
-    try {
-      // Check OpenRouter models endpoint
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-        },
-      });
-      
-      if (response.ok) {
-        setLlmStatus('connected');
-      } else {
-        setLlmStatus('error');
-      }
-    } catch (error) {
-      setLlmStatus('error');
-    }
-  };
-
-  const saveApiKey = async () => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY_API, tempKey);
-      setApiKey(tempKey);
-      setShowKeyModal(false);
-      validateConnection(tempKey);
-    } catch (e) {
-      Alert.alert('Error', 'Could not save API key');
-    }
-  };
-
-  const resetApp = async () => {
-    try {
-      await AsyncStorage.removeItem(STORAGE_KEY_API);
-      setApiKey('');
-      setTempKey('');
-      setLlmStatus('disconnected');
-      setText('');
-      setTitle('New Note');
-      setLastTitleGenLength(0);
-      setDebugData({ sentMessages: null, rawResponse: null });
-      Alert.alert('Reset', 'App state and settings cleared.');
-    } catch (error) {
-      Alert.alert('Error', 'Could not reset app');
-    }
-  };
-
-  const handleTextChange = (newText) => {
+  const handleTextChange = (newText: string) => {
     // Check for // trigger (batch fill after punctuation/newline, or inline fill mid-sentence)
     const doubleTriggerRegex = /(?<!:)\/\//;
     const doubleMatch = newText.match(doubleTriggerRegex);
 
     if (doubleMatch) {
-       const index = doubleMatch.index;
+       const index = doubleMatch.index!;
        const prefix = newText.slice(0, index);
        const suffix = newText.slice(index + 2);
 
@@ -301,7 +264,7 @@ function EditorScreen() {
   };
 
   // Find standalone / placeholder: space before, space/punctuation after, not part of URL
-  const findSingleSlash = (text) => {
+  const findSingleSlash = (text: string) => {
     for (let i = 0; i < text.length; i++) {
       if (text[i] === '/') {
         // Check it's not part of // or ://
@@ -322,7 +285,7 @@ function EditorScreen() {
   };
 
   // Batch fill: process each standalone / one at a time, sequentially
-  const triggerBatchFill = async (prefix, suffix) => {
+  const triggerBatchFill = async (prefix: string, suffix: string) => {
     if (llmStatus !== 'connected') {
       Alert.alert('Not Connected', 'Tap the status dot to connect OpenRouter.');
       setText(prefix + '//' + suffix);
@@ -332,7 +295,7 @@ function EditorScreen() {
     let currentPrefix = prefix;
     let currentSuffix = suffix;
 
-    const processSegment = async (segment, otherSegmentContext, otherSegmentDisplay, isPrefix) => {
+    const processSegment = async (segment: string, otherSegmentContext: string, otherSegmentDisplay: string, isPrefix: boolean) => {
       let currentSegment = segment;
       
       while (true) {
@@ -378,15 +341,6 @@ function EditorScreen() {
 
           const data = await response.json();
           
-          // Store debug info
-          setDebugData({
-            sentMessages: [
-              { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
-              { role: 'user', content: fullContext }
-            ],
-            rawResponse: data
-          });
-          
           let filledContent = '';
           if (data.choices && data.choices.length > 0) {
             const rawContent = coerceMessageContent(data.choices[0].message.content);
@@ -424,7 +378,7 @@ function EditorScreen() {
     triggerLLM(currentPrefix, currentSuffix);
   };
 
-  const triggerLLM = async (prefix, suffix) => {
+  const triggerLLM = async (prefix: string, suffix: string) => {
     if (llmStatus !== 'connected') {
       Alert.alert('Not Connected', 'Tap the status dot to connect OpenRouter.');
       setText(prefix + '//' + suffix);
@@ -470,15 +424,6 @@ function EditorScreen() {
 
       const data = await response.json();
 
-      // Store debug info
-      setDebugData({
-        sentMessages: [
-          { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
-          { role: 'user', content: fullContext }
-        ],
-        rawResponse: data
-      });
-      
       if (data.choices && data.choices.length > 0) {
         const rawContent = coerceMessageContent(data.choices[0].message.content);
         const cleanedContent = sanitizeModelContent(rawContent);
@@ -503,29 +448,24 @@ function EditorScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: Colors[theme].background }]}>
+      <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={{ flex: 1 }}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
-            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
             
             {/* Navigation Pills */}
             <View style={styles.navContainer}>
-              <View style={[styles.navPill, { backgroundColor: '#000000' }]}>
-                <Text style={[styles.navPillText, { color: '#FFFFFF' }]}>Note Taker</Text>
-              </View>
+              <TouchableWithoutFeedback onPress={() => {
+                saveCurrentNote().then(() => router.back());
+              }}>
+                <View style={[styles.navPill, { backgroundColor: '#000000' }]}>
+                  <Text style={[styles.navPillText, { color: '#FFFFFF' }]}>Back</Text>
+                </View>
+              </TouchableWithoutFeedback>
             </View>
 
             {/* Header */}
-            <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
-            <Text style={{ 
-              paddingHorizontal: 24, 
-              fontSize: 12, 
-              color: theme === 'light' ? '#687076' : '#9BA1A6',
-              marginBottom: 16,
-              fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif'
-            }}>
-              {currentDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-            </Text>
+            <Text style={[styles.headerTitle, { color: Colors[theme].text }]}>{title}</Text>
 
             {/* Editor */}
             <ScrollView 
@@ -547,76 +487,6 @@ function EditorScreen() {
             </ScrollView>
           </View>
         </TouchableWithoutFeedback>
-
-        {/* API Key Modal */}
-        <Modal
-          visible={showKeyModal}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowKeyModal(false)}
-        >
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Enter OpenRouter API Key</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={tempKey}
-                onChangeText={setTempKey}
-                placeholder="sk-or-..."
-                autoCapitalize="none"
-                secureTextEntry
-              />
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.cancelButton} onPress={() => setShowKeyModal(false)}>
-                  <Text style={styles.buttonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.saveButton} onPress={saveApiKey}>
-                  <Text style={[styles.buttonText, { color: '#fff' }]}>Save & Connect</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-
-        {/* Debug Overlay */}
-        {debugMode && (
-          <TouchableOpacity 
-            style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10 }} 
-            activeOpacity={1} 
-            onPress={() => setDebugMode(false)} 
-          />
-        )}
-
-        {/* Debug Panel */}
-        {debugMode && (
-          <View style={styles.debugPanel}>
-            <View style={styles.debugActions}>
-              <TouchableOpacity style={styles.resetButton} onPress={resetApp}>
-                <Text style={styles.resetButtonText}>Reset</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.debugScroll}>
-              <Text style={styles.debugLabel}>Sent to Model:</Text>
-              <Text style={styles.debugText} selectable>
-                {debugData.sentMessages ? JSON.stringify(debugData.sentMessages, null, 2) : 'No request yet'}
-              </Text>
-              <Text style={[styles.debugLabel, { marginTop: 12 }]}>Raw Response:</Text>
-              <Text style={styles.debugText} selectable>
-                {debugData.rawResponse ? JSON.stringify(debugData.rawResponse, null, 2) : 'No response yet'}
-              </Text>
-            </ScrollView>
-          </View>
-        )}
-
-        <FloatingMenu 
-          debugMode={debugMode}
-          toggleDebug={() => setDebugMode(!debugMode)}
-          llmStatus={llmStatus}
-          onConnectPress={() => setShowKeyModal(true)}
-          theme={theme}
-          toggleTheme={toggleTheme}
-        />
-
       </SafeAreaView>
     </View>
   );
