@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Image } from 'expo-image';
 import { Platform, StyleSheet } from 'react-native';
 
@@ -8,6 +9,15 @@ import { ThemedView } from '@/components/themed-view';
 import { Link } from 'expo-router';
 
 export default function HomeScreen() {
+  const [date, setDate] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setDate(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -21,6 +31,9 @@ export default function HomeScreen() {
         <ThemedText type="title">Welcome!</ThemedText>
         <HelloWave />
       </ThemedView>
+      <ThemedText style={styles.dateText} lightColor="#687076" darkColor="#9BA1A6">
+        {date.toLocaleString()}
+      </ThemedText>
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">Step 1: Try it</ThemedText>
         <ThemedText>
@@ -83,6 +96,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  dateText: {
+    fontSize: 12,
+    marginBottom: 8,
   },
   stepContainer: {
     gap: 8,
