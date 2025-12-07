@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "apply_patch_change_status",
+			"type": "shell",
+			"command": "apply_patch <<'PATCH'\n*** Begin Patch\n*** Update File: App.js\n@@\n-                <TouchableOpacity \n-                  style={[styles.navPill, llmStatus === 'connected' && { backgroundColor: '#E5E5EA' }]}\n-                  onPress={() => setShowKeyModal(true)}\n-                >\n-                  <Text style={styles.navPillText}>\n-                    {llmStatus === 'connected' ? 'Connected' : 'Offline'}\n-                  </Text>\n-                </TouchableOpacity>\n+                <TouchableOpacity \n+                  style={[styles.navPill, llmStatus === 'connected' && { backgroundColor: '#E5E5EA' }]}\n+                  onPress={() => setShowKeyModal(true)}\n+                >\n+                  <Text style={styles.navPillText}>\n+                    {llmStatus === 'connected' ? 'Online' : 'Offline'}\n+                  </Text>\n+                </TouchableOpacity>\n               </View>\n             </View>\n*** End Patch\nPATCH",
+			"problemMatcher": []
+		}
+	]
+}
