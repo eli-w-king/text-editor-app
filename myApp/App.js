@@ -531,33 +531,26 @@ function EditorScreen() {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
             <StatusBar style={(theme === 'dark' || theme === 'ultramarine' || theme === 'orange' || theme === 'plum') ? 'light' : 'dark'} />
-            
-            {/* Navigation Pills */}
-            <View style={styles.navContainer}>
-              <View style={[styles.navPill, { backgroundColor: '#000000' }]}>
-                <Text style={[styles.navPillText, { color: '#FFFFFF' }]}>Note Taker</Text>
-              </View>
-            </View>
-
-            {/* Header */}
-            <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
-            <Text style={{ 
-              paddingHorizontal: 24, 
-              fontSize: 12, 
-              color: theme === 'light' ? '#687076' : '#9BA1A6',
-              marginBottom: 16,
-              fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif'
-            }}>
-              {currentDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-            </Text>
 
             {/* Editor */}
             <ScrollView 
               style={styles.editorWrapper}
-              contentContainerStyle={{ flexGrow: 1 }}
+              contentContainerStyle={{ flexGrow: 1, paddingTop: '30%' }}
               keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
             >
+              {/* Header */}
+              <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
+              <Text style={{ 
+                paddingHorizontal: 24, 
+                fontSize: 12, 
+                color: theme === 'light' ? '#687076' : '#9BA1A6',
+                marginBottom: 16,
+                fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif'
+              }}>
+                {currentDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+              </Text>
+
               <TextInput
                 style={[styles.editor, { minHeight: '100%', color: Colors[theme].text }]}
                 multiline
