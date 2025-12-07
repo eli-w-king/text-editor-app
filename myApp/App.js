@@ -16,6 +16,7 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SYSTEM_PROMPT } from './constants/prompts';
+import { Colors } from './constants/theme';
 import { styles } from './styles';
 import { streamSingleFill, streamResponse, streamDelete } from './utils/animations';
 import FloatingMenu from './components/FloatingMenu';
@@ -127,6 +128,11 @@ function EditorScreen() {
   const [tempKey, setTempKey] = useState('');
   const [debugMode, setDebugMode] = useState(false);
   const [debugData, setDebugData] = useState({ sentMessages: null, rawResponse: null });
+  const [theme, setTheme] = useState('light');
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   // Load API Key on mount
   useEffect(() => {
@@ -491,11 +497,11 @@ function EditorScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: Colors[theme].background }]}>
       <SafeAreaView style={{ flex: 1 }}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
-            <StatusBar style="dark" />
+            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
             
             {/* Navigation Pills */}
             <View style={styles.navContainer}>
@@ -505,7 +511,7 @@ function EditorScreen() {
             </View>
 
             {/* Header */}
-            <Text style={styles.headerTitle}>{title}</Text>
+            <Text style={[styles.headerTitle, { color: Colors[theme].text }]}>{title}</Text>
 
             {/* Editor */}
             <ScrollView 
@@ -515,7 +521,7 @@ function EditorScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <TextInput
-                style={[styles.editor, { minHeight: '100%' }]}
+                style={[styles.editor, { minHeight: '100%', color: Colors[theme].text }]}
                 multiline
                 scrollEnabled={false}
                 value={text}
@@ -593,6 +599,8 @@ function EditorScreen() {
           toggleDebug={() => setDebugMode(!debugMode)}
           llmStatus={llmStatus}
           onConnectPress={() => setShowKeyModal(true)}
+          theme={theme}
+          toggleTheme={toggleTheme}
         />
 
       </SafeAreaView>

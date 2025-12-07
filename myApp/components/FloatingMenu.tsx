@@ -7,11 +7,19 @@ interface FloatingMenuProps {
   toggleDebug: () => void;
   llmStatus: string;
   onConnectPress: () => void;
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, toggleTheme }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const animation = useRef(new Animated.Value(0)).current;
+
+  const isDark = theme === 'dark';
+  const bg = isDark ? '#1C1C1E' : 'white';
+  const iconColor = isDark ? 'white' : 'black';
+  const secondaryBg = isDark ? '#2C2C2E' : '#f0f0f0';
+  const labelColor = isDark ? '#8E8E93' : '#666';
 
   const toggleMenu = () => {
     const toValue = isOpen ? 0 : 1;
@@ -26,7 +34,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const containerHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [60, 220],
+    outputRange: [60, 280],
   });
 
   const opacity = animation.interpolate({
@@ -41,38 +49,62 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.menuContainer, { height: containerHeight }]}>
+      <Animated.View style={[styles.menuContainer, { height: containerHeight, backgroundColor: bg }]}>
         
         {/* Content when Open */}
         <Animated.View style={[styles.openContent, { opacity }]} pointerEvents={isOpen ? 'auto' : 'none'}>
-           {/* Close Button at Top */}
-           <TouchableOpacity onPress={toggleMenu} style={styles.closeButton}>
-             <Ionicons name="close" size={24} color="#666" />
-           </TouchableOpacity>
-
            <View style={styles.optionsWrapper}>
              {/* Debug Option */}
              <TouchableOpacity onPress={toggleDebug} style={styles.optionItem}>
-               <View style={[styles.iconCircle, debugMode && styles.activeDebug]}>
-                  <Ionicons name="bug-outline" size={24} color={debugMode ? "white" : "black"} />
+               <View style={[
+                 styles.iconCircle, 
+                 { backgroundColor: secondaryBg }, 
+                 debugMode && { backgroundColor: isDark ? '#fff' : '#000' }
+               ]}>
+                  <Ionicons 
+                    name="bug-outline" 
+                    size={24} 
+                    color={debugMode ? (isDark ? 'black' : 'white') : iconColor} 
+                  />
                </View>
-               <Text style={styles.label}>Debug</Text>
+               <Text style={[styles.label, { color: labelColor }]}>Debug</Text>
+             </TouchableOpacity>
+
+             {/* Theme Option */}
+             <TouchableOpacity onPress={toggleTheme} style={styles.optionItem}>
+               <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
+                  <Ionicons name={isDark ? "moon" : "sunny"} size={24} color={iconColor} />
+               </View>
+               <Text style={[styles.label, { color: labelColor }]}>{isDark ? 'Dark' : 'Light'}</Text>
              </TouchableOpacity>
 
              {/* API Option */}
              <TouchableOpacity onPress={onConnectPress} style={styles.optionItem}>
-               <View style={[styles.iconCircle, llmStatus === 'connected' && styles.activeConnect]}>
-                  <Ionicons name={llmStatus === 'connected' ? "cloud-done-outline" : "cloud-offline-outline"} size={24} color={llmStatus === 'connected' ? "white" : "black"} />
+               <View style={[
+                 styles.iconCircle, 
+                 { backgroundColor: secondaryBg },
+                 llmStatus === 'connected' && styles.activeConnect
+               ]}>
+                  <Ionicons 
+                    name={llmStatus === 'connected' ? "cloud-done-outline" : "cloud-offline-outline"} 
+                    size={24} 
+                    color={llmStatus === 'connected' ? "white" : iconColor} 
+                  />
                </View>
-               <Text style={styles.label}>API</Text>
+               <Text style={[styles.label, { color: labelColor }]}>API</Text>
              </TouchableOpacity>
            </View>
+
+           {/* Close Button at Bottom */}
+           <TouchableOpacity onPress={toggleMenu} style={[styles.closeButton, { backgroundColor: secondaryBg }]}>
+             <Ionicons name="close" size={24} color={iconColor} />
+           </TouchableOpacity>
         </Animated.View>
 
         {/* Content when Closed (Menu Icon) */}
         <Animated.View style={[styles.closedContent, { opacity: menuIconOpacity }]} pointerEvents={isOpen ? 'none' : 'auto'}>
           <TouchableOpacity onPress={toggleMenu} style={styles.menuButton}>
-            <Ionicons name="menu" size={28} color="black" />
+            <Ionicons name="menu" size={28} color={iconColor} />
           </TouchableOpacity>
         </Animated.View>
 
@@ -130,8 +162,7 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
-    backgroundColor: '#f5f5f5',
+    marginTop: 10,
     borderRadius: 20,
   },
   optionsWrapper: {
