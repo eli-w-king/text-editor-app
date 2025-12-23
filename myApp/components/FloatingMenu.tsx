@@ -7,15 +7,16 @@ interface FloatingMenuProps {
   toggleDebug: () => void;
   llmStatus: string;
   onConnectPress: () => void;
-  theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum' | 'red';
-  setTheme: (theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum' | 'red') => void;
+  theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum';
+  setTheme: (theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum') => void;
   toggleTheme: () => void;
   resetApp?: () => void;
   debugData?: { sentMessages: any; rawResponse: any };
   onNotesPress?: (() => void) | null;
+  notesButtonLabel?: string;
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
   const animation = useRef(new Animated.Value(0)).current;
@@ -39,7 +40,6 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
       case 'dark': return { bg: '#1C1C1E', icon: 'white', secondary: '#1C1C1E', label: '#8E8E93', itemBorder: 'transparent' };
       case 'ultramarine': return { bg: '#002080', icon: 'white', secondary: '#002080', label: '#B3C6FF', itemBorder: 'transparent' };
       case 'orange': return { bg: '#B34700', icon: 'white', secondary: '#B34700', label: '#FFCCB3', itemBorder: 'transparent' };
-      case 'red': return { bg: '#CC0000', icon: 'white', secondary: '#CC0000', label: '#FFAAAA', itemBorder: 'transparent' };
       default: return { bg: 'white', icon: 'black', secondary: 'white', label: '#666', itemBorder: 'transparent' };
     }
   };
@@ -95,7 +95,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
   
   const extraHeight = expansionAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [0, 180] // 240 - 60
+      outputRange: [0, 140]
   });
 
   const containerHeight = Animated.add(baseHeight, extraHeight);
@@ -134,7 +134,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
   // Theme Section Interpolations
   const wrapperHeight = expansionAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [60, 240]
+      outputRange: [60, 200]
   });
 
   const themeButtonOpacity = expansionAnim.interpolate({
@@ -168,12 +168,11 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                  </Animated.View>
 
                  {/* Theme List */}
-                 <Animated.View style={{ position: 'absolute', opacity: themeListOpacity, height: 240, justifyContent: 'space-between', paddingVertical: 10 }} pointerEvents={showThemeOptions ? 'auto' : 'none'}>
+                 <Animated.View style={{ position: 'absolute', opacity: themeListOpacity, height: 200, justifyContent: 'space-between', paddingVertical: 5 }} pointerEvents={showThemeOptions ? 'auto' : 'none'}>
                     <TouchableOpacity onPress={() => handleThemeSelect('light')} style={[styles.colorOption, { backgroundColor: 'white' }]} />
                     <TouchableOpacity onPress={() => handleThemeSelect('dark')} style={[styles.colorOption, { backgroundColor: '#1C1C1E' }]} />
                     <TouchableOpacity onPress={() => handleThemeSelect('ultramarine')} style={[styles.colorOption, { backgroundColor: '#002080' }]} />
                     <TouchableOpacity onPress={() => handleThemeSelect('orange')} style={[styles.colorOption, { backgroundColor: '#B34700' }]} />
-                    <TouchableOpacity onPress={() => handleThemeSelect('red')} style={[styles.colorOption, { backgroundColor: '#CC0000' }]} />
                  </Animated.View>
 
              </Animated.View>
@@ -211,11 +210,11 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
              {/* Notes Option */}
              {onNotesPress && (
-               <TouchableOpacity onPress={onNotesPress} style={styles.optionItem}>
+               <TouchableOpacity onPress={() => { toggleMenu(); onNotesPress(); }} style={styles.optionItem}>
                  <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
-                    <Ionicons name="folder-outline" size={24} color={iconColor} />
+                    <Ionicons name={notesButtonLabel === 'New' ? 'add-outline' : 'document-text-outline'} size={24} color={iconColor} />
                  </View>
-                 <Text style={[styles.label, { color: labelColor }]}>Notes</Text>
+                 <Text style={[styles.label, { color: labelColor }]}>{notesButtonLabel || 'Notes'}</Text>
                </TouchableOpacity>
              )}
            </View>

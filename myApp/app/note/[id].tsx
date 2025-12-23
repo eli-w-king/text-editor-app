@@ -336,16 +336,16 @@ export default function NoteEditor() {
   const renderSavedNote = (note: Note) => (
     <TouchableOpacity 
       key={note.id}
-      style={[savedNotesStyles.noteItem, { backgroundColor: theme === 'dark' || theme === 'red' ? '#2C2C2E' : '#FFFFFF' }]}
+      style={[savedNotesStyles.noteItem, { backgroundColor: theme === 'dark' ? '#2C2C2E' : '#FFFFFF' }]}
       onPress={() => openNote(note)}
     >
       <Text style={[savedNotesStyles.noteTitle, { color: Colors[theme].text }]} numberOfLines={1}>
         {note.title || 'Untitled Note'}
       </Text>
-      <Text style={[savedNotesStyles.notePreview, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#666' }]} numberOfLines={2}>
+      <Text style={[savedNotesStyles.notePreview, { color: theme === 'dark' ? '#8E8E93' : '#666' }]} numberOfLines={2}>
         {note.content}
       </Text>
-      <Text style={[savedNotesStyles.noteDate, { color: theme === 'dark' || theme === 'red' ? '#636366' : '#999' }]}>
+      <Text style={[savedNotesStyles.noteDate, { color: theme === 'dark' ? '#636366' : '#999' }]}>
         {new Date(note.updatedAt).toLocaleDateString()}
       </Text>
     </TouchableOpacity>
@@ -616,7 +616,7 @@ export default function NoteEditor() {
             <Text style={[savedNotesStyles.headerTitle, { color: Colors[theme].text }]}>
               Saved Notes
             </Text>
-            <Text style={[savedNotesStyles.headerSubtitle, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#666' }]}>
+            <Text style={[savedNotesStyles.headerSubtitle, { color: theme === 'dark' ? '#8E8E93' : '#666' }]}>
               Swipe down or tap to go back
             </Text>
           </View>
@@ -637,7 +637,7 @@ export default function NoteEditor() {
 
             {savedNotes.length === 0 ? (
               <View style={savedNotesStyles.emptyState}>
-                <Text style={[savedNotesStyles.emptyText, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#999' }]}>
+                <Text style={[savedNotesStyles.emptyText, { color: theme === 'dark' ? '#8E8E93' : '#999' }]}>
                   No saved notes yet
                 </Text>
               </View>
@@ -648,8 +648,8 @@ export default function NoteEditor() {
 
           {/* Pull down indicator */}
           <TouchableOpacity style={savedNotesStyles.pullIndicator} onPress={showEditorView}>
-            <View style={[savedNotesStyles.pullBar, { backgroundColor: theme === 'dark' || theme === 'red' ? '#48484A' : '#D1D1D6' }]} />
-            <Text style={[savedNotesStyles.pullText, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#999' }]}>
+            <View style={[savedNotesStyles.pullBar, { backgroundColor: theme === 'dark' ? '#48484A' : '#D1D1D6' }]} />
+            <Text style={[savedNotesStyles.pullText, { color: theme === 'dark' ? '#8E8E93' : '#999' }]}>
               ↓ Swipe down to go back
             </Text>
           </TouchableOpacity>

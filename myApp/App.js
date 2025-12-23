@@ -17,6 +17,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SYSTEM_PROMPT } from './constants/prompts';
 import { Colors } from './constants/theme';
@@ -236,23 +237,22 @@ function EditorScreen() {
     await saveCurrentNote();
     await loadNotes();
     setShowingSavedNotes(true);
-    Animated.spring(slideAnim, {
+    Animated.timing(slideAnim, {
       toValue: 1,
-      useNativeDriver: true,
-      tension: 50,
-      friction: 10,
+      duration: 250,
+      useNativeDriver: false,
     }).start();
   };
 
   // Hide saved notes overlay
   const hideSavedNotesView = () => {
-    setShowingSavedNotes(false);
-    Animated.spring(slideAnim, {
+    Animated.timing(slideAnim, {
       toValue: 0,
-      useNativeDriver: true,
-      tension: 50,
-      friction: 10,
-    }).start();
+      duration: 200,
+      useNativeDriver: false,
+    }).start(() => {
+      setShowingSavedNotes(false);
+    });
   };
 
   // Open a saved note
@@ -685,10 +685,10 @@ function EditorScreen() {
   // Show all notes (don't filter out current note)
   const savedNotes = notes;
 
-  // Animation interpolation for saved notes overlay
-  const savedNotesTranslateY = slideAnim.interpolate({
+  // Animation interpolation for saved notes overlay (fade in/out)
+  const savedNotesOpacity = slideAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-SCREEN_HEIGHT, 0],
+    outputRange: [0, 1],
   });
 
   return (
@@ -736,34 +736,35 @@ function EditorScreen() {
           style={[
             savedNotesOverlayStyles.container,
             { 
-              backgroundColor: Colors[theme].background,
-              transform: [{ translateY: savedNotesTranslateY }],
+              opacity: savedNotesOpacity,
+              backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.3)' 
+                : theme === 'dark' ? 'rgba(21,23,24,0.3)'
+                : theme === 'ultramarine' ? 'rgba(0,32,128,0.3)'
+                : theme === 'orange' ? 'rgba(179,71,0,0.3)'
+                : 'rgba(74,44,56,0.3)',
             }
           ]}
           pointerEvents={showingSavedNotes ? 'auto' : 'none'}
         >
-          <View style={savedNotesOverlayStyles.header}>
-            <Text style={[savedNotesOverlayStyles.headerTitle, { color: Colors[theme].text }]}>
-              Saved Notes
-            </Text>
-          </View>
-
-          <ScrollView 
-            style={savedNotesOverlayStyles.notesList}
-            contentContainerStyle={savedNotesOverlayStyles.notesListContent}
-          >
-            {/* New Note Button */}
-            <TouchableOpacity 
-              style={[savedNotesOverlayStyles.newNoteButton, { borderColor: Colors[theme].text }]}
-              onPress={createNewNote}
+          <BlurView
+            intensity={25}
+            tint={theme === 'light' ? 'light' : 'dark'}
+            style={StyleSheet.absoluteFill}
+          />
+          <SafeAreaView style={{ flex: 1 }}>
+            <ScrollView 
+              style={savedNotesOverlayStyles.notesList}
+              contentContainerStyle={[savedNotesOverlayStyles.notesListContent, { paddingTop: '15%' }]}
             >
-              <Text style={[savedNotesOverlayStyles.newNoteText, { color: Colors[theme].text }]}>+ New Note</Text>
-            </TouchableOpacity>
+              {/* Header */}
+              <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 24, paddingHorizontal: 0 }]}>
+                Notes
+              </Text>
 
             {/* Clear All Button - only show if there are many notes */}
             {notes.length > 10 && (
               <TouchableOpacity 
-                style={{ backgroundColor: '#FF3B30', padding: 12, borderRadius: 12, marginBottom: 16, alignItems: 'center' }}
+                style={{ paddingVertical: 12, marginBottom: 8 }}
                 onPress={() => {
                   Alert.alert(
                     'Clear All Notes?',
@@ -775,7 +776,7 @@ function EditorScreen() {
                   );
                 }}
               >
-                <Text style={{ color: '#FFF', fontWeight: '600' }}>🗑 Clear All ({notes.length} notes)</Text>
+                <Text style={{ color: '#FF3B30', fontSize: 15 }}>Clear All Notes</Text>
               </TouchableOpacity>
             )}
 
@@ -792,23 +793,36 @@ function EditorScreen() {
                   <TouchableOpacity 
                     key={note.id}
                     style={[
-                      savedNotesOverlayStyles.noteItem, 
-                      { backgroundColor: theme === 'light' ? '#FFF' : '#2C2C2E' },
-                      isCurrentNote && { borderWidth: 2, borderColor: '#007AFF' }
+                      { 
+                        paddingVertical: 16,
+                        borderBottomWidth: StyleSheet.hairlineWidth,
+                        borderBottomColor: 'rgba(255,255,255,0.2)',
+                      },
+                      isCurrentNote && { opacity: 0.5 }
                     ]}
                     onPress={() => openNote(note)}
                   >
-                    {isCurrentNote && (
-                      <Text style={{ color: '#007AFF', fontSize: 10, fontWeight: '600', marginBottom: 4 }}>EDITING</Text>
-                    )}
-                    <Text style={[savedNotesOverlayStyles.noteTitle, { color: Colors[theme].text }]} numberOfLines={1}>
-                      {note.title || 'Untitled Note'}
-                    </Text>
-                    <Text style={[savedNotesOverlayStyles.notePreview, { color: theme === 'light' ? '#666' : '#8E8E93' }]} numberOfLines={2}>
-                      {note.content}
-                    </Text>
-                    <Text style={[savedNotesOverlayStyles.noteDate, { color: theme === 'light' ? '#999' : '#636366' }]}>
-                      {new Date(note.updatedAt).toLocaleDateString()}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Text style={[{ 
+                        fontSize: 17, 
+                        fontWeight: '500',
+                        color: Colors[theme].text,
+                        flex: 1,
+                        marginRight: 12,
+                      }]} numberOfLines={1}>
+                        {note.title || 'Untitled'}
+                      </Text>
+                      <Text style={{ fontSize: 15, color: Colors[theme].text, opacity: 0.7 }}>
+                        {new Date(note.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      </Text>
+                    </View>
+                    <Text style={{ 
+                      fontSize: 15, 
+                      color: Colors[theme].text,
+                      opacity: 0.7,
+                      marginTop: 4,
+                    }} numberOfLines={1}>
+                      {note.content || 'No content'}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -820,14 +834,7 @@ function EditorScreen() {
               </Text>
             )}
           </ScrollView>
-
-          {/* Close button */}
-          <TouchableOpacity 
-            style={savedNotesOverlayStyles.closeButton}
-            onPress={hideSavedNotesView}
-          >
-            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '600' }}>✕ Close</Text>
-          </TouchableOpacity>
+          </SafeAreaView>
         </Animated.View>
 
         {/* API Key Modal */}
@@ -874,7 +881,8 @@ function EditorScreen() {
           toggleTheme={toggleTheme}
           resetApp={resetApp}
           debugData={debugData}
-          onNotesPress={showSavedNotesView}
+          onNotesPress={showingSavedNotes ? createNewNote : showSavedNotesView}
+          notesButtonLabel={showingSavedNotes ? 'New' : 'Notes'}
         />
 
       </SafeAreaView>
@@ -891,7 +899,6 @@ const savedNotesOverlayStyles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 100,
-    paddingTop: 60,
   },
   header: {
     paddingHorizontal: 24,
