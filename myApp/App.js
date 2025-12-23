@@ -15,6 +15,7 @@ import {
   Animated,
   Dimensions,
   StyleSheet,
+  Easing,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -144,13 +145,71 @@ function EditorScreen() {
   const [showingSavedNotes, setShowingSavedNotes] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const isSaving = useRef(false); // Prevent concurrent saves
+  const scrollViewRef = useRef(null);
   
   // Gradient animation
   const gradientAnim = useRef(new Animated.Value(0)).current;
   
-  // LLM trigger color dots
+  // LLM trigger color dots - stored per note
   const [colorDots, setColorDots] = useState([]);
+  const [colorFamily, setColorFamily] = useState(null); // Color family for current note
   const screenDimensions = Dimensions.get('window');
+  
+  // Color families - each note gets one randomly assigned
+  const colorFamilies = {
+    ocean: [
+      '#00FFFF', // Cyan
+      '#00BFFF', // Deep sky blue
+      '#1E90FF', // Dodger blue
+      '#40E0D0', // Turquoise
+      '#00CED1', // Dark turquoise
+      '#5F9EA0', // Cadet blue
+      '#4169E1', // Royal blue
+    ],
+    forest: [
+      '#00FF7F', // Spring green
+      '#7FFF00', // Chartreuse
+      '#ADFF2F', // Green yellow
+      '#32CD32', // Lime green
+      '#00FA9A', // Medium spring green
+      '#98FB98', // Pale green
+      '#90EE90', // Light green
+    ],
+    sunset: [
+      '#FF4500', // Orange red
+      '#FF6347', // Tomato
+      '#FF7F50', // Coral
+      '#FFA500', // Orange
+      '#FFD700', // Gold
+      '#FF8C00', // Dark orange
+      '#FFDAB9', // Peach puff
+    ],
+    bloom: [
+      '#FF0080', // Hot pink
+      '#FF00FF', // Magenta
+      '#FF1493', // Deep pink
+      '#FF69B4', // Hot pink light
+      '#DA70D6', // Orchid
+      '#EE82EE', // Violet
+      '#DDA0DD', // Plum
+    ],
+    aurora: [
+      '#00FFFF', // Cyan
+      '#FF00FF', // Magenta
+      '#00FF00', // Lime
+      '#7B68EE', // Medium slate blue
+      '#9370DB', // Medium purple
+      '#BA55D3', // Medium orchid
+      '#00CED1', // Dark turquoise
+    ],
+  };
+  
+  const colorFamilyNames = Object.keys(colorFamilies);
+  
+  // Get a random color family name
+  const getRandomColorFamily = () => {
+    return colorFamilyNames[Math.floor(Math.random() * colorFamilyNames.length)];
+  };
   
   // Generate random BRIGHT neon color
   const getRandomBrightColor = () => {
@@ -174,28 +233,120 @@ function EditorScreen() {
     return colors[Math.floor(Math.random() * colors.length)];
   };
   
-  // Add a new color dot - size scales with token count
-  const addColorDot = (tokens = 20) => {
-    // Sliding scale: 5px per token, min 20px, capped at 200px
-    const size = Math.max(20, Math.min(tokens * 5, 200));
+  // Get color based on token count within the note's color family
+  // Few tokens = lighter/cooler shades, many tokens = more saturated/warmer shades
+  const getColorFromTokens = (tokens) => {
+    // Get current family colors, or pick one if not set
+    const family = colorFamily || getRandomColorFamily();
+    const familyColors = colorFamilies[family] || colorFamilies.ocean;
+    
+    // Normalize tokens to pick from different parts of the family palette
+    // Lower tokens = earlier colors (typically lighter/cooler within family)
+    // Higher tokens = later colors (typically more saturated)
+    const normalized = Math.max(0, Math.min(1, (tokens - 5) / 50));
+    
+    // Weight towards different parts of the palette based on tokens
+    if (normalized < 0.3) {
+      // Low tokens: pick from first third of palette
+      const range = Math.floor(familyColors.length / 3) || 1;
+      return familyColors[Math.floor(Math.random() * range)];
+    } else if (normalized > 0.7) {
+      // High tokens: pick from last third of palette
+      const range = Math.floor(familyColors.length / 3) || 1;
+      const startIdx = familyColors.length - range;
+      return familyColors[startIdx + Math.floor(Math.random() * range)];
+    } else {
+      // Middle range - pick from middle of palette
+      const third = Math.floor(familyColors.length / 3) || 1;
+      const startIdx = third;
+      const endIdx = familyColors.length - third;
+      const range = endIdx - startIdx || 1;
+      return familyColors[startIdx + Math.floor(Math.random() * range)];
+    }
+  };
+  
+  // Add a new color dot - size from latency, color from tokens
+  const addColorDot = (latencyMs = 500, tokens = 20) => {
+    // Latency-based size: larger for better glow diffusion
+    const minLatency = 200;
+    const maxLatency = 2500;
+    const clampedLatency = Math.max(minLatency, Math.min(latencyMs, maxLatency));
+    const normalized = (clampedLatency - minLatency) / (maxLatency - minLatency);
+    const targetSize = 80 + normalized * 120; // 80-200px (larger for softer glow)
+    
+    // Gentler drift for smoother movement
+    const driftX = (Math.random() - 0.5) * 30; // -15 to +15
+    const driftY = (Math.random() - 0.5) * 20; // -10 to +10
+    
+    // Start position below where it will end up (bubbling up effect)
+    const riseDistance = 20 + Math.random() * 30; // 20-50px rise
     
     const newDot = {
       id: Date.now() + Math.random(),
       x: Math.random() * screenDimensions.width,
       y: Math.random() * screenDimensions.height,
-      color: getRandomBrightColor(),
-      size: size,
+      color: getColorFromTokens(tokens),
+      size: targetSize,
       opacity: new Animated.Value(0),
+      scale: new Animated.Value(0.6),
+      translateX: new Animated.Value(0),
+      translateY: new Animated.Value(riseDistance), // Start below
+      driftX,
+      driftY,
     };
     
     setColorDots(prev => [...prev, newDot]);
     
-    // Fade in the dot
-    Animated.timing(newDot.opacity, {
-      toValue: 0.6 + Math.random() * 0.4, // 0.6-1.0 opacity
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+    // Ultra subtle glow effect
+    const targetOpacity = 0.08 + Math.random() * 0.12; // 0.08-0.20 opacity (very ghostly)
+    const duration = 3000 + Math.random() * 2000; // 3000-5000ms (very slow)
+    
+    Animated.parallel([
+      // Very slow fade in
+      Animated.timing(newDot.opacity, {
+        toValue: targetOpacity,
+        duration: duration,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.quad),
+      }),
+      // Gentle scale
+      Animated.timing(newDot.scale, {
+        toValue: 1,
+        duration: duration,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.quad),
+      }),
+      // Bubble up - rise from below
+      Animated.timing(newDot.translateY, {
+        toValue: 0,
+        duration: duration * 1.2,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+    ]).start(() => {
+      // Organic free-floating drift - wanders to random positions continuously
+      const wanderDrift = () => {
+        const nextX = (Math.random() - 0.5) * 30; // Random target within ±15px
+        const nextY = (Math.random() - 0.5) * 20; // Random target within ±10px
+        const duration = 8000 + Math.random() * 12000; // 8-20 seconds to next position
+        
+        Animated.parallel([
+          Animated.timing(newDot.translateX, {
+            toValue: nextX,
+            duration: duration,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.sin),
+          }),
+          Animated.timing(newDot.translateY, {
+            toValue: nextY,
+            duration: duration * (0.7 + Math.random() * 0.6), // Slightly different Y timing
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.sin),
+          }),
+        ]).start(() => wanderDrift()); // Pick a new random destination when done
+      };
+      wanderDrift();
+    });
   };
   
   // Start gradient animation loop
@@ -269,6 +420,15 @@ function EditorScreen() {
         title: title,
         content: trimmedText,
         updatedAt: Date.now(),
+        colorFamily: colorFamily || getRandomColorFamily(), // Save the note's color family
+        colorDots: colorDots.map(dot => ({
+          id: dot.id,
+          x: dot.x,
+          y: dot.y,
+          color: dot.color,
+          size: dot.size,
+          opacityValue: typeof dot.opacity === 'object' ? (dot.opacity._value || 0.8) : (dot.opacity || 0.8),
+        })),
       };
 
       const storedNotes = await AsyncStorage.getItem(NOTES_STORAGE_KEY);
@@ -332,6 +492,15 @@ function EditorScreen() {
 
   // Open a saved note
   const openNote = (note) => {
+    // Load the note's saved dots
+    const savedDots = note.colorDots || [];
+    const restoredDots = savedDots.map(dot => ({
+      ...dot,
+      opacity: new Animated.Value(dot.opacityValue || 0.8),
+    }));
+    setColorDots(restoredDots);
+    setColorFamily(note.colorFamily || null); // Restore the note's color family
+    
     setText(note.content);
     setTitle(note.title);
     setCurrentNoteId(note.id);
@@ -344,6 +513,11 @@ function EditorScreen() {
   // Create a new note
   const createNewNote = async () => {
     await saveCurrentNote();
+    
+    // Clear dots and assign new color family for new note
+    setColorDots([]);
+    setColorFamily(getRandomColorFamily());
+    
     setText('');
     setTitle('New Note');
     setCurrentNoteId(null);
@@ -372,8 +546,9 @@ function EditorScreen() {
   useEffect(() => {
     loadSettings();
     loadNotes();
-    // Set initial date once, no timer needed
+    // Set initial date and random color family for new notes
     setCurrentDate(new Date());
+    setColorFamily(getRandomColorFamily());
   }, []);
 
   // Auto-generate title when text changes significantly
@@ -612,6 +787,7 @@ function EditorScreen() {
         const today = new Date().toDateString();
 
         try {
+          const startTime = Date.now();
           const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -633,6 +809,7 @@ function EditorScreen() {
           });
 
           const data = await response.json();
+          const latencyMs = Date.now() - startTime;
           
           // Store debug info
           setDebugData({
@@ -648,9 +825,9 @@ function EditorScreen() {
             const rawContent = coerceMessageContent(data.choices[0].message.content);
             filledContent = sanitizeModelContent(rawContent);
             
-            // Add color dot sized by tokens used
+            // Add color dot - size from latency, color from tokens
             const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || filledContent.length / 4;
-            addColorDot(tokensUsed);
+            addColorDot(latencyMs, tokensUsed);
           }
           
           if (filledContent) {
@@ -703,6 +880,7 @@ function EditorScreen() {
     const today = new Date().toDateString();
 
     try {
+      const startTime = Date.now();
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -729,6 +907,7 @@ function EditorScreen() {
       });
 
       const data = await response.json();
+      const latencyMs = Date.now() - startTime;
 
       // Store debug info
       setDebugData({
@@ -748,9 +927,9 @@ function EditorScreen() {
           return;
         }
 
-        // Add color dot sized by tokens used
+        // Add color dot - size from latency, color from tokens
         const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || cleanedContent.length / 4;
-        addColorDot(tokensUsed);
+        addColorDot(latencyMs, tokensUsed);
 
         // Start streaming effect
               await streamResponse(setText, cleanedContent, placeholder);
@@ -772,6 +951,12 @@ function EditorScreen() {
   const savedNotesOpacity = slideAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
+  });
+
+  // Editor content fades out when notes overlay opens
+  const editorOpacity = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
   });
 
   // Get gradient colors based on theme
@@ -834,6 +1019,11 @@ function EditorScreen() {
               borderRadius: dot.size / 2,
               backgroundColor: dot.color,
               opacity: dot.opacity,
+              transform: [
+                { scale: dot.scale || 1 },
+                { translateX: dot.translateX || 0 },
+                { translateY: dot.translateY || 0 },
+              ],
             }}
           />
         ))}
@@ -841,7 +1031,7 @@ function EditorScreen() {
       
       {/* Heavy Blur Layer - makes dots look like soft glowing orbs */}
       <BlurView
-        intensity={80}
+        intensity={100}
         tint={theme === 'light' ? 'light' : 'dark'}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
@@ -849,49 +1039,64 @@ function EditorScreen() {
       
       {/* Second blur pass for extra smoothness */}
       <BlurView
-        intensity={40}
+        intensity={60}
         tint={theme === 'light' ? 'light' : 'dark'}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
       
       <SafeAreaView style={{ flex: 1 }}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={{ flex: 1 }}>
-            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+        <Animated.View style={{ flex: 1, opacity: editorOpacity }}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+            keyboardVerticalOffset={0}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+              <View style={{ flex: 1 }}>
+                <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
 
-            {/* Editor */}
-            <ScrollView 
-              style={styles.editorWrapper}
-              contentContainerStyle={{ flexGrow: 1, paddingTop: '20%' }}
-              keyboardDismissMode="interactive"
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* Header */}
-              <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
-              <Text style={{ 
-                paddingHorizontal: 24, 
-                fontSize: 12, 
-                color: theme === 'light' ? '#687076' : '#9BA1A6',
-                marginBottom: 16,
-                fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif'
-              }}>
-                {currentDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-              </Text>
+              {/* Editor */}
+              <ScrollView 
+                ref={scrollViewRef}
+                style={styles.editorWrapper}
+                contentContainerStyle={{ flexGrow: 1, paddingTop: '20%', paddingBottom: 100 }}
+                keyboardDismissMode="interactive"
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Header */}
+                <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
+                <Text style={{ 
+                  paddingHorizontal: 24, 
+                  fontSize: 12, 
+                  color: theme === 'light' ? '#687076' : '#9BA1A6',
+                  marginBottom: 16,
+                  fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif'
+                }}>
+                  {currentDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                </Text>
 
-              <TextInput
-                style={[styles.editor, { minHeight: '100%', color: Colors[theme].text }]}
-                multiline
-                scrollEnabled={false}
-                value={text}
-                onChangeText={handleTextChange}
-                placeholder="Type / for blanks, // to fill them"
-                placeholderTextColor="#9ca3af"
-                textAlignVertical="top"
-              />
-            </ScrollView>
-          </View>
-        </TouchableWithoutFeedback>
+                <TextInput
+                  style={[styles.editor, { minHeight: '100%', color: Colors[theme].text }]}
+                  multiline
+                  scrollEnabled={false}
+                  value={text}
+                  onChangeText={handleTextChange}
+                  onSelectionChange={() => {
+                    // Scroll to keep cursor visible
+                    setTimeout(() => {
+                      scrollViewRef.current?.scrollToEnd({ animated: true });
+                    }, 100);
+                  }}
+                  placeholder="Type / for blanks, // to fill them"
+                  placeholderTextColor="#9ca3af"
+                  textAlignVertical="top"
+                />
+              </ScrollView>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+        </Animated.View>
 
         {/* Saved Notes Overlay */}
         <Animated.View 

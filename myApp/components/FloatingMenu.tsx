@@ -89,12 +89,12 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const baseHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [60, 310],
+    outputRange: [60, 330],
   });
   
   const extraHeight = expansionAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [0, 40]
+      outputRange: [0, 30]
   });
 
   const containerHeight = Animated.add(baseHeight, extraHeight);
@@ -133,7 +133,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
   // Theme Section Interpolations
   const wrapperHeight = expansionAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [60, 100]
+      outputRange: [60, 90]
   });
 
   const themeButtonOpacity = expansionAnim.interpolate({
@@ -390,7 +390,8 @@ const styles = StyleSheet.create({
     width: 60,
     height: '100%',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingTop: 5,
+    paddingBottom: 10,
   },
   closeButton: {
     width: 40,
