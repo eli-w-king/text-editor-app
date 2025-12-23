@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Text, 
   TextInput, 
@@ -12,6 +12,9 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
   Keyboard,
+  Animated,
+  Dimensions,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,8 +24,9 @@ import { styles } from './styles';
 import { streamSingleFill, streamResponse, streamDelete } from './utils/animations';
 import FloatingMenu from './components/FloatingMenu';
 
-
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const STORAGE_KEY_API = 'llm_api_key';
+const NOTES_STORAGE_KEY = 'notes_data';
 
 // Extracts string content regardless of OpenRouter payload shape (string or array chunks).
 const coerceMessageContent = (messageContent) => {
@@ -130,18 +134,171 @@ function EditorScreen() {
   const [debugData, setDebugData] = useState({ sentMessages: null, rawResponse: null });
   const [theme, setTheme] = useState('light');
   const [currentDate, setCurrentDate] = useState(new Date());
+  
+  // Saved notes state
+  const [notes, setNotes] = useState([]);
+  const [currentNoteId, setCurrentNoteId] = useState(null);
+  const currentNoteIdRef = useRef(null); // Use ref to avoid stale closure issues
+  const [showingSavedNotes, setShowingSavedNotes] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const isSaving = useRef(false); // Prevent concurrent saves
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentNoteIdRef.current = currentNoteId;
+  }, [currentNoteId]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
+  // Load notes from storage
+  const loadNotes = async () => {
+    try {
+      const storedNotes = await AsyncStorage.getItem(NOTES_STORAGE_KEY);
+      if (storedNotes) {
+        setNotes(JSON.parse(storedNotes));
+      }
+    } catch (e) {
+      console.error('Failed to load notes', e);
+    }
+  };
+
+  // Save current note - only called explicitly, not automatically
+  const saveCurrentNote = async () => {
+    // Prevent concurrent saves
+    if (isSaving.current) {
+      return;
+    }
+    
+    const trimmedText = text.trim();
+    if (trimmedText.length === 0) {
+      // Don't save empty notes
+      return;
+    }
+
+    isSaving.current = true;
+
+    try {
+      // Use ref for the current note ID to avoid stale closures
+      let noteId = currentNoteIdRef.current;
+      if (!noteId) {
+        noteId = Date.now().toString();
+        currentNoteIdRef.current = noteId;
+        setCurrentNoteId(noteId);
+      }
+
+      const newNote = {
+        id: noteId,
+        title: title,
+        content: trimmedText,
+        updatedAt: Date.now(),
+      };
+
+      const storedNotes = await AsyncStorage.getItem(NOTES_STORAGE_KEY);
+      let currentNotes = storedNotes ? JSON.parse(storedNotes) : [];
+      
+      const existingIndex = currentNotes.findIndex(n => n.id === noteId);
+      if (existingIndex >= 0) {
+        currentNotes[existingIndex] = newNote;
+      } else {
+        currentNotes.unshift(newNote);
+      }
+      
+      currentNotes.sort((a, b) => b.updatedAt - a.updatedAt);
+      await AsyncStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(currentNotes));
+      setNotes(currentNotes);
+    } catch (e) {
+      console.error('Failed to save note', e);
+    } finally {
+      isSaving.current = false;
+    }
+  };
+
+  // Delete a note
+  const deleteNote = async (id) => {
+    try {
+      const storedNotes = await AsyncStorage.getItem(NOTES_STORAGE_KEY);
+      if (storedNotes) {
+        let currentNotes = JSON.parse(storedNotes);
+        currentNotes = currentNotes.filter(n => n.id !== id);
+        await AsyncStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(currentNotes));
+        setNotes(currentNotes);
+      }
+    } catch (e) {
+      console.error('Failed to delete note', e);
+    }
+  };
+
+  // Show saved notes overlay
+  const showSavedNotesView = async () => {
+    Keyboard.dismiss();
+    await saveCurrentNote();
+    await loadNotes();
+    setShowingSavedNotes(true);
+    Animated.spring(slideAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 10,
+    }).start();
+  };
+
+  // Hide saved notes overlay
+  const hideSavedNotesView = () => {
+    setShowingSavedNotes(false);
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 10,
+    }).start();
+  };
+
+  // Open a saved note
+  const openNote = (note) => {
+    setText(note.content);
+    setTitle(note.title);
+    setCurrentNoteId(note.id);
+    currentNoteIdRef.current = note.id;
+    setLastTitleGenLength(0);
+    setCurrentDate(new Date(note.updatedAt));
+    hideSavedNotesView();
+  };
+
+  // Create a new note
+  const createNewNote = async () => {
+    await saveCurrentNote();
+    setText('');
+    setTitle('New Note');
+    setCurrentNoteId(null);
+    currentNoteIdRef.current = null;
+    setLastTitleGenLength(0);
+    setCurrentDate(new Date());
+    hideSavedNotesView();
+  };
+
+  // Clear all notes (for fixing corrupted data)
+  const clearAllNotes = async () => {
+    try {
+      await AsyncStorage.removeItem(NOTES_STORAGE_KEY);
+      setNotes([]);
+      setText('');
+      setTitle('New Note');
+      setCurrentNoteId(null);
+      currentNoteIdRef.current = null;
+      Alert.alert('Done', 'All notes cleared');
+    } catch (e) {
+      console.error('Failed to clear notes', e);
+    }
+  };
+
   // Load API Key on mount
   useEffect(() => {
     loadSettings();
-    const timer = setInterval(() => {
-      setCurrentDate(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
+    loadNotes();
+    // Set initial date once, no timer needed
+    setCurrentDate(new Date());
   }, []);
 
   // Auto-generate title when text changes significantly
@@ -525,6 +682,15 @@ function EditorScreen() {
     }
   };
 
+  // Show all notes (don't filter out current note)
+  const savedNotes = notes;
+
+  // Animation interpolation for saved notes overlay
+  const savedNotesTranslateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-SCREEN_HEIGHT, 0],
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: Colors[theme].background }]}>
       <SafeAreaView style={{ flex: 1 }}>
@@ -535,10 +701,27 @@ function EditorScreen() {
             {/* Editor */}
             <ScrollView 
               style={styles.editorWrapper}
-              contentContainerStyle={{ flexGrow: 1, paddingTop: '30%' }}
+              contentContainerStyle={{ flexGrow: 1, paddingTop: '20%' }}
               keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
             >
+              {/* Button to open saved notes */}
+              <TouchableOpacity 
+                style={{
+                  backgroundColor: theme === 'light' ? '#000' : '#FFF',
+                  paddingVertical: 12,
+                  paddingHorizontal: 20,
+                  borderRadius: 25,
+                  alignSelf: 'center',
+                  marginBottom: 20,
+                }}
+                onPress={showSavedNotesView}
+              >
+                <Text style={{ color: theme === 'light' ? '#FFF' : '#000', fontSize: 14, fontWeight: '600' }}>
+                  📂 Saved Notes ({notes.length})
+                </Text>
+              </TouchableOpacity>
+
               {/* Header */}
               <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
               <Text style={{ 
@@ -564,6 +747,105 @@ function EditorScreen() {
             </ScrollView>
           </View>
         </TouchableWithoutFeedback>
+
+        {/* Saved Notes Overlay */}
+        <Animated.View 
+          style={[
+            savedNotesOverlayStyles.container,
+            { 
+              backgroundColor: Colors[theme].background,
+              transform: [{ translateY: savedNotesTranslateY }],
+            }
+          ]}
+          pointerEvents={showingSavedNotes ? 'auto' : 'none'}
+        >
+          <View style={savedNotesOverlayStyles.header}>
+            <Text style={[savedNotesOverlayStyles.headerTitle, { color: Colors[theme].text }]}>
+              Saved Notes
+            </Text>
+          </View>
+
+          <ScrollView 
+            style={savedNotesOverlayStyles.notesList}
+            contentContainerStyle={savedNotesOverlayStyles.notesListContent}
+          >
+            {/* New Note Button */}
+            <TouchableOpacity 
+              style={[savedNotesOverlayStyles.newNoteButton, { borderColor: Colors[theme].text }]}
+              onPress={createNewNote}
+            >
+              <Text style={[savedNotesOverlayStyles.newNoteText, { color: Colors[theme].text }]}>+ New Note</Text>
+            </TouchableOpacity>
+
+            {/* Clear All Button - only show if there are many notes */}
+            {notes.length > 10 && (
+              <TouchableOpacity 
+                style={{ backgroundColor: '#FF3B30', padding: 12, borderRadius: 12, marginBottom: 16, alignItems: 'center' }}
+                onPress={() => {
+                  Alert.alert(
+                    'Clear All Notes?',
+                    `This will delete all ${notes.length} notes. This cannot be undone.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete All', style: 'destructive', onPress: clearAllNotes },
+                    ]
+                  );
+                }}
+              >
+                <Text style={{ color: '#FFF', fontWeight: '600' }}>🗑 Clear All ({notes.length} notes)</Text>
+              </TouchableOpacity>
+            )}
+
+            {savedNotes.length === 0 ? (
+              <View style={savedNotesOverlayStyles.emptyState}>
+                <Text style={{ color: theme === 'light' ? '#999' : '#8E8E93', fontSize: 16 }}>
+                  No saved notes yet
+                </Text>
+              </View>
+            ) : (
+              savedNotes.slice(0, 50).map(note => {
+                const isCurrentNote = note.id === currentNoteId;
+                return (
+                  <TouchableOpacity 
+                    key={note.id}
+                    style={[
+                      savedNotesOverlayStyles.noteItem, 
+                      { backgroundColor: theme === 'light' ? '#FFF' : '#2C2C2E' },
+                      isCurrentNote && { borderWidth: 2, borderColor: '#007AFF' }
+                    ]}
+                    onPress={() => openNote(note)}
+                  >
+                    {isCurrentNote && (
+                      <Text style={{ color: '#007AFF', fontSize: 10, fontWeight: '600', marginBottom: 4 }}>EDITING</Text>
+                    )}
+                    <Text style={[savedNotesOverlayStyles.noteTitle, { color: Colors[theme].text }]} numberOfLines={1}>
+                      {note.title || 'Untitled Note'}
+                    </Text>
+                    <Text style={[savedNotesOverlayStyles.notePreview, { color: theme === 'light' ? '#666' : '#8E8E93' }]} numberOfLines={2}>
+                      {note.content}
+                    </Text>
+                    <Text style={[savedNotesOverlayStyles.noteDate, { color: theme === 'light' ? '#999' : '#636366' }]}>
+                      {new Date(note.updatedAt).toLocaleDateString()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+            {savedNotes.length > 50 && (
+              <Text style={{ textAlign: 'center', color: '#999', marginTop: 10 }}>
+                Showing 50 of {savedNotes.length} notes
+              </Text>
+            )}
+          </ScrollView>
+
+          {/* Close button */}
+          <TouchableOpacity 
+            style={savedNotesOverlayStyles.closeButton}
+            onPress={hideSavedNotesView}
+          >
+            <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '600' }}>✕ Close</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* API Key Modal */}
         <Modal
@@ -615,3 +897,78 @@ function EditorScreen() {
     </View>
   );
 }
+
+// Styles for saved notes overlay
+const savedNotesOverlayStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    paddingTop: 60,
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+  },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: 'bold',
+  },
+  notesList: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  notesListContent: {
+    paddingBottom: 100,
+  },
+  newNoteButton: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  newNoteText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noteItem: {
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  noteTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  notePreview: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  noteDate: {
+    fontSize: 12,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 50,
+  },
+  closeButton: {
+    backgroundColor: '#000',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    alignSelf: 'center',
+    marginBottom: 40,
+  },
+});

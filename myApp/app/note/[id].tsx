@@ -5,9 +5,15 @@ import {
   View, 
   ScrollView,
   TouchableWithoutFeedback,
+  TouchableOpacity,
   Keyboard,
   Alert,
-  BackHandler
+  BackHandler,
+  Dimensions,
+  Animated,
+  PanResponder,
+  NativeSyntheticEvent,
+  NativeScrollEvent
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -17,6 +23,8 @@ import { styles } from '@/styles';
 import { streamSingleFill, streamResponse, streamDelete } from '@/utils/animations';
 import { useAppContext } from '@/context/AppContext';
 import { useNotes, Note } from '@/hooks/useNotes';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Extracts string content regardless of OpenRouter payload shape (string or array chunks).
 const coerceMessageContent = (messageContent: any) => {
@@ -106,12 +114,79 @@ export default function NoteEditor() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { theme, apiKey, llmStatus } = useAppContext();
-  const { notes, saveNote, deleteNote } = useNotes();
+  const { notes, saveNote, deleteNote, loadNotes } = useNotes();
   
   const [text, setText] = useState('');
   const [title, setTitle] = useState('New Note');
   const [lastTitleGenLength, setLastTitleGenLength] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [currentNoteId, setCurrentNoteId] = useState<string | null>(id === 'new' ? null : id);
+  
+  // Scroll-based navigation state
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [showingSavedNotes, setShowingSavedNotes] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current; // 0 = editor, 1 = saved notes
+  
+  // Pan responder for swipe gesture on title area
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only respond to vertical swipes
+        return Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && Math.abs(gestureState.dy) > 10;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Swiping up (negative dy) should show saved notes
+        if (gestureState.dy < -30 && !showingSavedNotes) {
+          // User is swiping up - animate to saved notes
+          showSavedNotesView();
+        }
+      },
+      onPanResponderRelease: () => {},
+    })
+  ).current;
+
+  // Show saved notes with animation
+  const showSavedNotesView = async () => {
+    Keyboard.dismiss();
+    await saveCurrentNote();
+    await loadNotes();
+    setShowingSavedNotes(true);
+    Animated.spring(slideAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 10,
+    }).start();
+  };
+
+  // Show editor with animation
+  const showEditorView = () => {
+    setShowingSavedNotes(false);
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 10,
+    }).start();
+  };
+
+  // Pan responder for saved notes view (swipe down to go back)
+  const savedNotesPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > Math.abs(gestureState.dx) && Math.abs(gestureState.dy) > 10;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Swiping down (positive dy) should go back to editor
+        if (gestureState.dy > 30 && showingSavedNotes) {
+          showEditorView();
+        }
+      },
+      onPanResponderRelease: () => {},
+    })
+  ).current;
 
   // Load note
   useEffect(() => {
@@ -120,24 +195,30 @@ export default function NoteEditor() {
       if (note) {
         setText(note.content);
         setTitle(note.title);
+        setCurrentNoteId(id);
       }
     }
     setIsLoaded(true);
   }, [id, notes]);
 
-  // Auto-save logic
+  // Auto-save logic - only save if there's content
   const saveCurrentNote = useCallback(async () => {
     if (!isLoaded) return;
     
     const trimmedText = text.trim();
     if (trimmedText.length === 0) {
-      if (id && id !== 'new') {
-        await deleteNote(id);
+      // Don't save empty notes - delete if it was an existing note
+      if (currentNoteId) {
+        await deleteNote(currentNoteId);
       }
       return;
     }
 
-    const noteId = (id && id !== 'new') ? id : Date.now().toString();
+    const noteId = currentNoteId || Date.now().toString();
+    if (!currentNoteId) {
+      setCurrentNoteId(noteId);
+    }
+    
     const newNote: Note = {
       id: noteId,
       title: title,
@@ -145,7 +226,7 @@ export default function NoteEditor() {
       updatedAt: Date.now(),
     };
     await saveNote(newNote);
-  }, [text, title, id, isLoaded, saveNote, deleteNote]);
+  }, [text, title, currentNoteId, isLoaded, saveNote, deleteNote]);
 
   // Save on unmount or back
   useEffect(() => {
@@ -215,6 +296,52 @@ export default function NoteEditor() {
       console.error('Title generation error:', error);
     }
   };
+
+  // Open a saved note
+  const openNote = async (note: Note) => {
+    // Load the selected note
+    setText(note.content);
+    setTitle(note.title);
+    setCurrentNoteId(note.id);
+    setLastTitleGenLength(0);
+    
+    // Go back to editor view
+    showEditorView();
+  };
+
+  // Create a new note
+  const createNewNote = async () => {
+    // Save current note first
+    await saveCurrentNote();
+    
+    // Reset to new note
+    setText('');
+    setTitle('New Note');
+    setCurrentNoteId(null);
+    setLastTitleGenLength(0);
+    
+    // Go back to editor view
+    showEditorView();
+  };
+
+  // Render saved note item
+  const renderSavedNote = (note: Note) => (
+    <TouchableOpacity 
+      key={note.id}
+      style={[savedNotesStyles.noteItem, { backgroundColor: theme === 'dark' || theme === 'red' ? '#2C2C2E' : '#FFFFFF' }]}
+      onPress={() => openNote(note)}
+    >
+      <Text style={[savedNotesStyles.noteTitle, { color: Colors[theme].text }]} numberOfLines={1}>
+        {note.title || 'Untitled Note'}
+      </Text>
+      <Text style={[savedNotesStyles.notePreview, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#666' }]} numberOfLines={2}>
+        {note.content}
+      </Text>
+      <Text style={[savedNotesStyles.noteDate, { color: theme === 'dark' || theme === 'red' ? '#636366' : '#999' }]}>
+        {new Date(note.updatedAt).toLocaleDateString()}
+      </Text>
+    </TouchableOpacity>
+  );
 
   const handleTextChange = (newText: string) => {
     // Check for // trigger (batch fill after punctuation/newline, or inline fill mid-sentence)
@@ -446,48 +573,227 @@ export default function NoteEditor() {
     }
   };
 
+  // Filter out current note from saved notes list (don't show the note being edited)
+  const savedNotes = notes.filter(n => n.id !== currentNoteId);
+
+  // Animation interpolations
+  const editorTranslateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, SCREEN_HEIGHT],
+  });
+
+  const savedNotesTranslateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-SCREEN_HEIGHT, 0],
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: Colors[theme].background }]}>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={{ flex: 1 }}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={{ flex: 1 }}>
-            
-            {/* Navigation Pills */}
-            <View style={styles.navContainer}>
-              <TouchableWithoutFeedback onPress={() => {
-                saveCurrentNote().then(() => router.back());
-              }}>
-                <View style={[styles.navPill, { backgroundColor: '#000000' }]}>
-                  <Text style={[styles.navPillText, { color: '#FFFFFF' }]}>Back</Text>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-
-            {/* Header */}
-            <Text style={[styles.headerTitle, { color: Colors[theme].text }]}>{title}</Text>
-
-            {/* Editor */}
-            <ScrollView 
-              style={styles.editorWrapper}
-              contentContainerStyle={{ flexGrow: 1 }}
-              keyboardDismissMode="interactive"
-              keyboardShouldPersistTaps="handled"
-            >
-              <TextInput
-                style={[styles.editor, { minHeight: '100%', color: Colors[theme].text }]}
-                multiline
-                scrollEnabled={false}
-                value={text}
-                onChangeText={handleTextChange}
-                placeholder="Type / for blanks, // to fill them"
-                placeholderTextColor="#9ca3af"
-                textAlignVertical="top"
-              />
-            </ScrollView>
+        
+        {/* ===== SAVED NOTES OVERLAY (slides down from top) ===== */}
+        <Animated.View 
+          style={[
+            savedNotesStyles.savedNotesContainer,
+            { 
+              backgroundColor: Colors[theme].background,
+              transform: [{ translateY: savedNotesTranslateY }],
+            }
+          ]}
+          {...savedNotesPanResponder.panHandlers}
+        >
+          {/* Header */}
+          <View style={savedNotesStyles.header}>
+            <Text style={[savedNotesStyles.headerTitle, { color: Colors[theme].text }]}>
+              Saved Notes
+            </Text>
+            <Text style={[savedNotesStyles.headerSubtitle, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#666' }]}>
+              Swipe down or tap to go back
+            </Text>
           </View>
-        </TouchableWithoutFeedback>
+
+          {/* Notes List */}
+          <ScrollView 
+            style={savedNotesStyles.notesList}
+            contentContainerStyle={savedNotesStyles.notesListContent}
+            showsVerticalScrollIndicator={true}
+          >
+            {/* New Note Button */}
+            <TouchableOpacity 
+              style={[savedNotesStyles.newNoteButton, { borderColor: Colors[theme].text }]}
+              onPress={createNewNote}
+            >
+              <Text style={[savedNotesStyles.newNoteText, { color: Colors[theme].text }]}>+ New Note</Text>
+            </TouchableOpacity>
+
+            {savedNotes.length === 0 ? (
+              <View style={savedNotesStyles.emptyState}>
+                <Text style={[savedNotesStyles.emptyText, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#999' }]}>
+                  No saved notes yet
+                </Text>
+              </View>
+            ) : (
+              savedNotes.map(note => renderSavedNote(note))
+            )}
+          </ScrollView>
+
+          {/* Pull down indicator */}
+          <TouchableOpacity style={savedNotesStyles.pullIndicator} onPress={showEditorView}>
+            <View style={[savedNotesStyles.pullBar, { backgroundColor: theme === 'dark' || theme === 'red' ? '#48484A' : '#D1D1D6' }]} />
+            <Text style={[savedNotesStyles.pullText, { color: theme === 'dark' || theme === 'red' ? '#8E8E93' : '#999' }]}>
+              ↓ Swipe down to go back
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* ===== EDITOR (main view) ===== */}
+        <Animated.View 
+          style={[
+            { flex: 1 },
+            { transform: [{ translateY: editorTranslateY }] }
+          ]}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View style={{ flex: 1 }}>
+              
+              {/* Big visible button to open saved notes */}
+              <TouchableOpacity 
+                style={{
+                  backgroundColor: '#000',
+                  paddingVertical: 12,
+                  paddingHorizontal: 20,
+                  borderRadius: 25,
+                  alignSelf: 'center',
+                  marginTop: 20,
+                  marginBottom: 10,
+                }}
+                onPress={showSavedNotesView}
+              >
+                <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '600' }}>📂 Open Saved Notes</Text>
+              </TouchableOpacity>
+
+              {/* Header/Title */}
+              <Text style={[styles.headerTitle, { color: Colors[theme].text }]}>{title}</Text>
+
+              {/* Editor */}
+              <ScrollView 
+                style={styles.editorWrapper}
+                contentContainerStyle={{ flexGrow: 1 }}
+                keyboardDismissMode="interactive"
+                keyboardShouldPersistTaps="handled"
+              >
+                <TextInput
+                  style={[styles.editor, { minHeight: '100%', color: Colors[theme].text }]}
+                  multiline
+                  scrollEnabled={false}
+                  value={text}
+                  onChangeText={handleTextChange}
+                  placeholder="Type / for blanks, // to fill them"
+                  placeholderTextColor="#9ca3af"
+                  textAlignVertical="top"
+                />
+              </ScrollView>
+            </View>
+          </TouchableWithoutFeedback>
+        </Animated.View>
+
       </SafeAreaView>
     </View>
   );
 }
+
+// Styles for saved notes section
+import { StyleSheet } from 'react-native';
+
+const savedNotesStyles = StyleSheet.create({
+  savedNotesContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    paddingTop: 60,
+  },
+  header: {
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+  },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+  },
+  notesList: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  notesListContent: {
+    paddingBottom: 100,
+  },
+  newNoteButton: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  newNoteText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noteItem: {
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  noteTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  notePreview: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  noteDate: {
+    fontSize: 12,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 50,
+  },
+  emptyText: {
+    fontSize: 16,
+  },
+  pullIndicator: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingBottom: 30,
+  },
+  pullBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 8,
+  },
+  pullText: {
+    fontSize: 12,
+  },
+  pullUpArea: {
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 10,
+  },
+});

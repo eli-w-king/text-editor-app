@@ -7,8 +7,8 @@ interface FloatingMenuProps {
   toggleDebug: () => void;
   llmStatus: string;
   onConnectPress: () => void;
-  theme: 'light' | 'dark' | 'ultramarine' | 'orange';
-  setTheme: (theme: 'light' | 'dark' | 'ultramarine' | 'orange') => void;
+  theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum' | 'red';
+  setTheme: (theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum' | 'red') => void;
   toggleTheme: () => void;
   resetApp?: () => void;
   debugData?: { sentMessages: any; rawResponse: any };
@@ -38,6 +38,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
       case 'dark': return { bg: '#1C1C1E', icon: 'white', secondary: '#1C1C1E', label: '#8E8E93', itemBorder: 'transparent' };
       case 'ultramarine': return { bg: '#002080', icon: 'white', secondary: '#002080', label: '#B3C6FF', itemBorder: 'transparent' };
       case 'orange': return { bg: '#B34700', icon: 'white', secondary: '#B34700', label: '#FFCCB3', itemBorder: 'transparent' };
+      case 'red': return { bg: '#CC0000', icon: 'white', secondary: '#CC0000', label: '#FFAAAA', itemBorder: 'transparent' };
       default: return { bg: 'white', icon: 'black', secondary: 'white', label: '#666', itemBorder: 'transparent' };
     }
   };
@@ -171,6 +172,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                     <TouchableOpacity onPress={() => handleThemeSelect('dark')} style={[styles.colorOption, { backgroundColor: '#1C1C1E' }]} />
                     <TouchableOpacity onPress={() => handleThemeSelect('ultramarine')} style={[styles.colorOption, { backgroundColor: '#002080' }]} />
                     <TouchableOpacity onPress={() => handleThemeSelect('orange')} style={[styles.colorOption, { backgroundColor: '#B34700' }]} />
+                    <TouchableOpacity onPress={() => handleThemeSelect('red')} style={[styles.colorOption, { backgroundColor: '#CC0000' }]} />
                  </Animated.View>
 
              </Animated.View>
