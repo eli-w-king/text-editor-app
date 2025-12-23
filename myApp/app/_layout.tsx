@@ -8,7 +8,7 @@ import GlobalUI from '@/components/GlobalUI';
 
 function RootLayoutNav() {
   const { theme } = useAppContext();
-  const isDark = theme === 'dark' || theme === 'ultramarine' || theme === 'orange' || theme === 'plum';
+  const isDark = theme === 'dark';
 
   return (
     <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>

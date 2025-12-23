@@ -25,30 +25,6 @@ export const Colors = {
     tabIconDefault: '#9BA1A6',
     tabIconSelected: tintColorDark,
   },
-  ultramarine: {
-    text: '#FFFFFF',
-    background: '#002080', // Deep bright ultramarine
-    tint: '#4D79FF',
-    icon: '#B3C6FF',
-    tabIconDefault: '#B3C6FF',
-    tabIconSelected: '#FFFFFF',
-  },
-  orange: {
-    text: '#FFFFFF',
-    background: '#B34700', // Burnt orange
-    tint: '#FF9966',
-    icon: '#FFCCB3',
-    tabIconDefault: '#FFCCB3',
-    tabIconSelected: '#FFFFFF',
-  },
-  plum: {
-    text: '#FFFFFF',
-    background: '#4A2C38', // Brown plum
-    tint: '#D6A8BD',
-    icon: '#E5C3D1',
-    tabIconDefault: '#E5C3D1',
-    tabIconSelected: '#FFFFFF',
-  },
 };
 
 export const Fonts = Platform.select({

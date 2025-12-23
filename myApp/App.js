@@ -176,12 +176,8 @@ function EditorScreen() {
   
   // Add a new color dot - size scales with token count
   const addColorDot = (tokens = 20) => {
-    // Scale: min 30px at 1 token, max 200px at 64+ tokens
-    // Using sqrt for more gradual scaling
-    const minSize = 30;
-    const maxSize = 200;
-    const normalizedTokens = Math.min(tokens, 64) / 64; // cap at 64 tokens
-    const size = minSize + (maxSize - minSize) * Math.sqrt(normalizedTokens);
+    // Sliding scale: 5px per token, min 20px, capped at 200px
+    const size = Math.max(20, Math.min(tokens * 5, 200));
     
     const newDot = {
       id: Date.now() + Math.random(),
@@ -792,21 +788,6 @@ function EditorScreen() {
           start: ['#151718', '#1a1d1e', '#151718'],
           end: ['#1a1d1e', '#151718', '#1a1d1e'],
         };
-      case 'ultramarine':
-        return {
-          start: ['#002080', '#001a6b', '#002080'],
-          end: ['#001a6b', '#002080', '#001a6b'],
-        };
-      case 'orange':
-        return {
-          start: ['#B34700', '#993d00', '#B34700'],
-          end: ['#993d00', '#B34700', '#993d00'],
-        };
-      case 'plum':
-        return {
-          start: ['#4A2C38', '#3d2430', '#4A2C38'],
-          end: ['#3d2430', '#4A2C38', '#3d2430'],
-        };
       default:
         return {
           start: [base, base, base],
@@ -877,7 +858,7 @@ function EditorScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
-            <StatusBar style={(theme === 'dark' || theme === 'ultramarine' || theme === 'orange' || theme === 'plum') ? 'light' : 'dark'} />
+            <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
 
             {/* Editor */}
             <ScrollView 

@@ -7,7 +7,7 @@ import { Colors } from '@/constants/theme';
 import { useAppContext } from '@/context/AppContext';
 
 export function useThemeColor(
-  props: { light?: string; dark?: string; ultramarine?: string; orange?: string; plum?: string },
+  props: { light?: string; dark?: string },
   colorName: keyof typeof Colors.light
 ) {
   const { theme } = useAppContext();

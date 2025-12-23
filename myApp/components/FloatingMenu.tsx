@@ -8,8 +8,8 @@ interface FloatingMenuProps {
   toggleDebug: () => void;
   llmStatus: string;
   onConnectPress: () => void;
-  theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum';
-  setTheme: (theme: 'light' | 'dark' | 'ultramarine' | 'orange' | 'plum') => void;
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
   toggleTheme: () => void;
   resetApp?: () => void;
   debugData?: { sentMessages: any; rawResponse: any };
@@ -39,8 +39,6 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
     switch (theme) {
       case 'light': return { bg: 'rgba(255,255,255,0.8)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
       case 'dark': return { bg: 'rgba(28,28,30,0.8)', icon: 'white', secondary: 'rgba(255,255,255,0.12)', label: '#8E8E93', glow: 'rgba(255,255,255,0.15)' };
-      case 'ultramarine': return { bg: 'rgba(0,32,128,0.8)', icon: 'white', secondary: 'rgba(255,255,255,0.15)', label: '#B3C6FF', glow: 'rgba(77,121,255,0.3)' };
-      case 'orange': return { bg: 'rgba(179,71,0,0.8)', icon: 'white', secondary: 'rgba(255,255,255,0.15)', label: '#FFCCB3', glow: 'rgba(255,153,102,0.3)' };
       default: return { bg: 'rgba(255,255,255,0.8)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
     }
   };
@@ -91,12 +89,12 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const baseHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [60, 340],
+    outputRange: [60, 310],
   });
   
   const extraHeight = expansionAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [0, 140]
+      outputRange: [0, 40]
   });
 
   const containerHeight = Animated.add(baseHeight, extraHeight);
@@ -135,7 +133,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
   // Theme Section Interpolations
   const wrapperHeight = expansionAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [60, 200]
+      outputRange: [60, 100]
   });
 
   const themeButtonOpacity = expansionAnim.interpolate({
@@ -175,11 +173,9 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                  </Animated.View>
 
                  {/* Theme List */}
-                 <Animated.View style={{ position: 'absolute', opacity: themeListOpacity, height: 200, justifyContent: 'space-between', paddingVertical: 5 }} pointerEvents={showThemeOptions ? 'auto' : 'none'}>
-                    <TouchableOpacity onPress={() => handleThemeSelect('light')} style={[styles.colorOption, { backgroundColor: 'white' }]} />
+                 <Animated.View style={{ position: 'absolute', opacity: themeListOpacity, height: 90, justifyContent: 'space-between', paddingVertical: 5 }} pointerEvents={showThemeOptions ? 'auto' : 'none'}>
+                    <TouchableOpacity onPress={() => handleThemeSelect('light')} style={[styles.colorOption, { backgroundColor: 'white', borderWidth: StyleSheet.hairlineWidth, borderColor: '#999' }]} />
                     <TouchableOpacity onPress={() => handleThemeSelect('dark')} style={[styles.colorOption, { backgroundColor: '#1C1C1E' }]} />
-                    <TouchableOpacity onPress={() => handleThemeSelect('ultramarine')} style={[styles.colorOption, { backgroundColor: '#002080' }]} />
-                    <TouchableOpacity onPress={() => handleThemeSelect('orange')} style={[styles.colorOption, { backgroundColor: '#B34700' }]} />
                  </Animated.View>
 
              </Animated.View>
