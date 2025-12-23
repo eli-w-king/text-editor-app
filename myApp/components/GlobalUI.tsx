@@ -27,7 +27,8 @@ export default function GlobalUI() {
     setShowKeyModal, 
     apiKey, 
     saveApiKey, 
-    resetApp 
+    resetApp,
+    onNotesPress 
   } = useAppContext();
 
   const [tempKey, setTempKey] = React.useState('');
@@ -107,6 +108,7 @@ export default function GlobalUI() {
         setTheme={setTheme}
         toggleTheme={toggleTheme}
         resetApp={resetApp}
+        onNotesPress={onNotesPress}
       />
     </>
   );

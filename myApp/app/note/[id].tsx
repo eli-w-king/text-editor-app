@@ -113,7 +113,7 @@ const sanitizeModelContent = (rawInput: any) => {
 export default function NoteEditor() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { theme, apiKey, llmStatus } = useAppContext();
+  const { theme, apiKey, llmStatus, setOnNotesPress } = useAppContext();
   const { notes, saveNote, deleteNote, loadNotes } = useNotes();
   
   const [text, setText] = useState('');
@@ -187,6 +187,14 @@ export default function NoteEditor() {
       onPanResponderRelease: () => {},
     })
   ).current;
+
+  // Register the showSavedNotesView callback with the context
+  useEffect(() => {
+    setOnNotesPress(() => showSavedNotesView);
+    return () => {
+      setOnNotesPress(null);
+    };
+  }, [setOnNotesPress]);
 
   // Load note
   useEffect(() => {
@@ -656,25 +664,8 @@ export default function NoteEditor() {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <View style={{ flex: 1 }}>
-              
-              {/* Big visible button to open saved notes */}
-              <TouchableOpacity 
-                style={{
-                  backgroundColor: '#000',
-                  paddingVertical: 12,
-                  paddingHorizontal: 20,
-                  borderRadius: 25,
-                  alignSelf: 'center',
-                  marginTop: 20,
-                  marginBottom: 10,
-                }}
-                onPress={showSavedNotesView}
-              >
-                <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '600' }}>📂 Open Saved Notes</Text>
-              </TouchableOpacity>
-
               {/* Header/Title */}
-              <Text style={[styles.headerTitle, { color: Colors[theme].text }]}>{title}</Text>
+              <Text style={[styles.headerTitle, { color: Colors[theme].text, marginTop: 20 }]}>{title}</Text>
 
               {/* Editor */}
               <ScrollView 

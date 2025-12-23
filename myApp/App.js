@@ -705,23 +705,6 @@ function EditorScreen() {
               keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
             >
-              {/* Button to open saved notes */}
-              <TouchableOpacity 
-                style={{
-                  backgroundColor: theme === 'light' ? '#000' : '#FFF',
-                  paddingVertical: 12,
-                  paddingHorizontal: 20,
-                  borderRadius: 25,
-                  alignSelf: 'center',
-                  marginBottom: 20,
-                }}
-                onPress={showSavedNotesView}
-              >
-                <Text style={{ color: theme === 'light' ? '#FFF' : '#000', fontSize: 14, fontWeight: '600' }}>
-                  📂 Saved Notes ({notes.length})
-                </Text>
-              </TouchableOpacity>
-
               {/* Header */}
               <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
               <Text style={{ 
@@ -891,6 +874,7 @@ function EditorScreen() {
           toggleTheme={toggleTheme}
           resetApp={resetApp}
           debugData={debugData}
+          onNotesPress={showSavedNotesView}
         />
 
       </SafeAreaView>

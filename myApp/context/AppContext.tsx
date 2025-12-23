@@ -17,6 +17,8 @@ interface AppContextType {
   validateConnection: (key: string) => Promise<void>;
   saveApiKey: (key: string) => Promise<void>;
   resetApp: () => Promise<void>;
+  onNotesPress: (() => void) | null;
+  setOnNotesPress: (callback: (() => void) | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -29,6 +31,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [llmStatus, setLlmStatus] = useState('disconnected');
   const [apiKey, setApiKey] = useState('');
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [onNotesPress, setOnNotesPress] = useState<(() => void) | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -111,7 +114,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setShowKeyModal,
       validateConnection,
       saveApiKey,
-      resetApp
+      resetApp,
+      onNotesPress,
+      setOnNotesPress
     }}>
       {children}
     </AppContext.Provider>

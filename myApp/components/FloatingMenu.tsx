@@ -12,9 +12,10 @@ interface FloatingMenuProps {
   toggleTheme: () => void;
   resetApp?: () => void;
   debugData?: { sentMessages: any; rawResponse: any };
+  onNotesPress?: (() => void) | null;
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
   const animation = useRef(new Animated.Value(0)).current;
@@ -89,7 +90,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const baseHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [60, 280],
+    outputRange: [60, 340],
   });
   
   const extraHeight = expansionAnim.interpolate({
@@ -207,6 +208,16 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                </View>
                <Text style={[styles.label, { color: labelColor }]}>API</Text>
              </TouchableOpacity>
+
+             {/* Notes Option */}
+             {onNotesPress && (
+               <TouchableOpacity onPress={onNotesPress} style={styles.optionItem}>
+                 <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
+                    <Ionicons name="folder-outline" size={24} color={iconColor} />
+                 </View>
+                 <Text style={[styles.label, { color: labelColor }]}>Notes</Text>
+               </TouchableOpacity>
+             )}
            </View>
 
            {/* Spacer to preserve layout where close button was */}
