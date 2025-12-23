@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, TouchableOpacity, StyleSheet, Animated, Text, Easing, ScrollView, Platform, Dimensions } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 
 interface FloatingMenuProps {
@@ -36,15 +37,15 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const getThemeColors = () => {
     switch (theme) {
-      case 'light': return { bg: 'white', icon: 'black', secondary: 'white', label: '#666', itemBorder: 'transparent' };
-      case 'dark': return { bg: '#1C1C1E', icon: 'white', secondary: '#1C1C1E', label: '#8E8E93', itemBorder: 'transparent' };
-      case 'ultramarine': return { bg: '#002080', icon: 'white', secondary: '#002080', label: '#B3C6FF', itemBorder: 'transparent' };
-      case 'orange': return { bg: '#B34700', icon: 'white', secondary: '#B34700', label: '#FFCCB3', itemBorder: 'transparent' };
-      default: return { bg: 'white', icon: 'black', secondary: 'white', label: '#666', itemBorder: 'transparent' };
+      case 'light': return { bg: 'rgba(255,255,255,0.8)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
+      case 'dark': return { bg: 'rgba(28,28,30,0.8)', icon: 'white', secondary: 'rgba(255,255,255,0.12)', label: '#8E8E93', glow: 'rgba(255,255,255,0.15)' };
+      case 'ultramarine': return { bg: 'rgba(0,32,128,0.8)', icon: 'white', secondary: 'rgba(255,255,255,0.15)', label: '#B3C6FF', glow: 'rgba(77,121,255,0.3)' };
+      case 'orange': return { bg: 'rgba(179,71,0,0.8)', icon: 'white', secondary: 'rgba(255,255,255,0.15)', label: '#FFCCB3', glow: 'rgba(255,153,102,0.3)' };
+      default: return { bg: 'rgba(255,255,255,0.8)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
     }
   };
 
-  const { bg, icon: iconColor, secondary: secondaryBg, label: labelColor, itemBorder } = getThemeColors();
+  const { bg, icon: iconColor, secondary: secondaryBg, label: labelColor, glow: glowColor } = getThemeColors();
 
   const toggleMenu = () => {
     const toValue = isOpen ? 0 : 1;
@@ -149,7 +150,13 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.menuContainer, { height: containerHeight, backgroundColor: bg }]}>
+      <Animated.View style={[styles.menuContainer, { height: containerHeight, backgroundColor: 'transparent', overflow: 'hidden' }]}>
+        {/* Blur Background */}
+        <BlurView
+          intensity={40}
+          tint={theme === 'light' ? 'light' : 'dark'}
+          style={[StyleSheet.absoluteFill, { backgroundColor: bg }]}
+        />
         
         {/* Content when Open */}
         <Animated.View style={[styles.openContent, { opacity }]} pointerEvents={isOpen ? 'auto' : 'none'}>
@@ -302,41 +309,23 @@ const styles = StyleSheet.create({
     bottom: 40,
     left: 20,
     zIndex: 100,
-    // Remove shadow from container as children have shadows now? 
-    // Or keep it but it might affect layout. 
-    // Actually, container wraps everything.
   },
   menuContainer: {
     width: 60,
-    backgroundColor: 'white',
     borderRadius: 30,
     alignItems: 'center',
-    // Add shadow here instead of container if we want separate shadows
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-    zIndex: 20, // Above debug panel
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.15)',
+    zIndex: 20,
   },
   debugPanel: {
     position: 'absolute',
-    left: 70, // 60 width + 10 gap
+    left: 70,
     bottom: 0,
-    // width removed here as it's set dynamically
     borderRadius: 20,
     padding: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
     zIndex: 10,
   },
   debugHeader: {
@@ -382,14 +371,8 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   closedContent: {
     position: 'absolute',
@@ -438,14 +421,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 5,
   },
   activeDebug: {
     backgroundColor: '#000',

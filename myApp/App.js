@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SYSTEM_PROMPT } from './constants/prompts';
 import { Colors } from './constants/theme';
@@ -143,6 +144,84 @@ function EditorScreen() {
   const [showingSavedNotes, setShowingSavedNotes] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const isSaving = useRef(false); // Prevent concurrent saves
+  
+  // Gradient animation
+  const gradientAnim = useRef(new Animated.Value(0)).current;
+  
+  // LLM trigger color dots
+  const [colorDots, setColorDots] = useState([]);
+  const screenDimensions = Dimensions.get('window');
+  
+  // Generate random BRIGHT neon color
+  const getRandomBrightColor = () => {
+    const colors = [
+      '#FF0080', // Hot pink
+      '#00FFFF', // Cyan
+      '#FF00FF', // Magenta
+      '#00FF00', // Lime
+      '#FFFF00', // Yellow
+      '#FF4500', // Orange red
+      '#00FF7F', // Spring green
+      '#FF1493', // Deep pink
+      '#00BFFF', // Deep sky blue
+      '#7FFF00', // Chartreuse
+      '#FF69B4', // Hot pink light
+      '#1E90FF', // Dodger blue
+      '#ADFF2F', // Green yellow
+      '#FF6347', // Tomato
+      '#40E0D0', // Turquoise
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+  
+  // Add a new color dot - size scales with token count
+  const addColorDot = (tokens = 20) => {
+    // Scale: min 30px at 1 token, max 200px at 64+ tokens
+    // Using sqrt for more gradual scaling
+    const minSize = 30;
+    const maxSize = 200;
+    const normalizedTokens = Math.min(tokens, 64) / 64; // cap at 64 tokens
+    const size = minSize + (maxSize - minSize) * Math.sqrt(normalizedTokens);
+    
+    const newDot = {
+      id: Date.now() + Math.random(),
+      x: Math.random() * screenDimensions.width,
+      y: Math.random() * screenDimensions.height,
+      color: getRandomBrightColor(),
+      size: size,
+      opacity: new Animated.Value(0),
+    };
+    
+    setColorDots(prev => [...prev, newDot]);
+    
+    // Fade in the dot
+    Animated.timing(newDot.opacity, {
+      toValue: 0.6 + Math.random() * 0.4, // 0.6-1.0 opacity
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+  
+  // Start gradient animation loop
+  useEffect(() => {
+    const animateGradient = () => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(gradientAnim, {
+            toValue: 1,
+            duration: 8000,
+            useNativeDriver: false,
+          }),
+          Animated.timing(gradientAnim, {
+            toValue: 0,
+            duration: 8000,
+            useNativeDriver: false,
+          }),
+        ])
+      ).start();
+    };
+    animateGradient();
+  }, []);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -572,6 +651,10 @@ function EditorScreen() {
           if (data.choices && data.choices.length > 0) {
             const rawContent = coerceMessageContent(data.choices[0].message.content);
             filledContent = sanitizeModelContent(rawContent);
+            
+            // Add color dot sized by tokens used
+            const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || filledContent.length / 4;
+            addColorDot(tokensUsed);
           }
           
           if (filledContent) {
@@ -669,6 +752,10 @@ function EditorScreen() {
           return;
         }
 
+        // Add color dot sized by tokens used
+        const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || cleanedContent.length / 4;
+        addColorDot(tokensUsed);
+
         // Start streaming effect
               await streamResponse(setText, cleanedContent, placeholder);
       } else {
@@ -691,8 +778,102 @@ function EditorScreen() {
     outputRange: [0, 1],
   });
 
+  // Get gradient colors based on theme
+  const getGradientColors = () => {
+    const base = Colors[theme].background;
+    switch (theme) {
+      case 'light':
+        return {
+          start: ['#E8E8ED', '#D8D8DD', '#E8E8ED'],
+          end: ['#D8D8DD', '#E8E8ED', '#D8D8DD'],
+        };
+      case 'dark':
+        return {
+          start: ['#151718', '#1a1d1e', '#151718'],
+          end: ['#1a1d1e', '#151718', '#1a1d1e'],
+        };
+      case 'ultramarine':
+        return {
+          start: ['#002080', '#001a6b', '#002080'],
+          end: ['#001a6b', '#002080', '#001a6b'],
+        };
+      case 'orange':
+        return {
+          start: ['#B34700', '#993d00', '#B34700'],
+          end: ['#993d00', '#B34700', '#993d00'],
+        };
+      case 'plum':
+        return {
+          start: ['#4A2C38', '#3d2430', '#4A2C38'],
+          end: ['#3d2430', '#4A2C38', '#3d2430'],
+        };
+      default:
+        return {
+          start: [base, base, base],
+          end: [base, base, base],
+        };
+    }
+  };
+
+  const gradientColors = getGradientColors();
+  
+  // Interpolate gradient position
+  const gradientStart = gradientAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 0.3],
+  });
+  const gradientEnd = gradientAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.7],
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: Colors[theme].background }]}>
+      {/* Animated Gradient Background */}
+      <Animated.View style={[StyleSheet.absoluteFill]} pointerEvents="none">
+        <LinearGradient
+          colors={gradientColors.start}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      
+      {/* LLM Trigger Color Dots - behind the blur */}
+      <View style={[StyleSheet.absoluteFill]} pointerEvents="none">
+        {colorDots.map(dot => (
+          <Animated.View
+            key={dot.id}
+            style={{
+              position: 'absolute',
+              left: dot.x - dot.size / 2,
+              top: dot.y - dot.size / 2,
+              width: dot.size,
+              height: dot.size,
+              borderRadius: dot.size / 2,
+              backgroundColor: dot.color,
+              opacity: dot.opacity,
+            }}
+          />
+        ))}
+      </View>
+      
+      {/* Heavy Blur Layer - makes dots look like soft glowing orbs */}
+      <BlurView
+        intensity={80}
+        tint={theme === 'light' ? 'light' : 'dark'}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      
+      {/* Second blur pass for extra smoothness */}
+      <BlurView
+        intensity={40}
+        tint={theme === 'light' ? 'light' : 'dark'}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      
       <SafeAreaView style={{ flex: 1 }}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ flex: 1 }}>
@@ -931,11 +1112,6 @@ const savedNotesOverlayStyles = StyleSheet.create({
     padding: 15,
     borderRadius: 12,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   noteTitle: {
     fontSize: 18,
