@@ -17,9 +17,10 @@ interface FloatingMenuProps {
   notesButtonLabel?: string;
   noteText?: string;
   directAction?: (() => void) | null;
+  onNewNote?: (() => void) | null;
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel, noteText, directAction }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel, noteText, directAction, onNewNote }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
   const [corner, setCorner] = useState<'bottomLeft' | 'bottomRight'>('bottomLeft');
@@ -104,6 +105,25 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
     const keyboardWillShow = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => {
+        // Close menu if open when keyboard shows
+        if (isOpen) {
+          setIsOpen(false);
+          Animated.timing(animation, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: false,
+            easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+          }).start();
+          if (showThemeOptions) {
+            setShowThemeOptions(false);
+            Animated.timing(expansionAnim, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: false,
+            }).start();
+          }
+        }
+        
         Animated.timing(keyboardAnim, {
           toValue: e.endCoordinates.height - 25,
           duration: 250,
@@ -189,7 +209,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const baseHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [60, 280],
+    outputRange: [60, 340],
   });
   
   const extraHeight = expansionAnim.interpolate({
@@ -331,6 +351,16 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                     <Ionicons name={notesButtonLabel === 'New' ? 'add-outline' : 'document-text-outline'} size={24} color={iconColor} />
                  </View>
                  <Text style={[styles.label, { color: labelColor }]}>{notesButtonLabel || 'Notes'}</Text>
+               </TouchableOpacity>
+             )}
+
+             {/* New Note Option - only show when not on saved notes view */}
+             {onNewNote && notesButtonLabel !== 'New' && (
+               <TouchableOpacity onPress={() => { toggleMenu(); onNewNote(); }} style={styles.optionItem}>
+                 <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
+                    <Ionicons name="add-outline" size={24} color={iconColor} />
+                 </View>
+                 <Text style={[styles.label, { color: labelColor }]}>New</Text>
                </TouchableOpacity>
              )}
            </View>

@@ -116,6 +116,37 @@ const sanitizeModelContent = (rawInput) => {
   return cleaned.trim();
 };
 
+// Ensures proper spacing around filled content so words don't mash together
+const ensureSpacing = (prefix, content, suffix) => {
+  let spacedContent = content;
+  
+  // Check if we need a space before the content
+  if (prefix.length > 0) {
+    const lastPrefixChar = prefix[prefix.length - 1];
+    const firstContentChar = content[0];
+    // Add space if prefix doesn't end with space/newline/punctuation and content doesn't start with space/punctuation
+    const needsSpaceBefore = !/[\s\n.,!?;:'"\-—–()[\]{}]$/.test(lastPrefixChar) && 
+                             !/^[\s.,!?;:'"\-—–()[\]{}]/.test(firstContentChar);
+    if (needsSpaceBefore) {
+      spacedContent = ' ' + spacedContent;
+    }
+  }
+  
+  // Check if we need a space after the content
+  if (suffix.length > 0) {
+    const lastContentChar = spacedContent[spacedContent.length - 1];
+    const firstSuffixChar = suffix[0];
+    // Add space if content doesn't end with space/punctuation and suffix doesn't start with space/punctuation
+    const needsSpaceAfter = !/[\s\n.,!?;:'"\-—–()[\]{}]$/.test(lastContentChar) && 
+                            !/^[\s\n.,!?;:'"\-—–()[\]{}]/.test(firstSuffixChar);
+    if (needsSpaceAfter) {
+      spacedContent = spacedContent + ' ';
+    }
+  }
+  
+  return spacedContent;
+};
+
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -657,7 +688,7 @@ function EditorScreen() {
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash-lite-preview-09-2025',
           messages: [
-            { role: 'system', content: "You are a helpful assistant. Summarize the user's text into a short, concise title (3-5 words max). Do not use quotes." },
+            { role: 'system', content: "You are a helpful assistant. Summarize the user's text into a short, concise title (3-5 words max). Do not use quotes. IMPORTANT: The title MUST be in the same language as the user's text. If they write in Spanish, title in Spanish. If French, title in French. Match their language exactly." },
             { role: 'user', content: text.slice(0, 1000) } // Limit context
           ],
           temperature: 0.3,
@@ -906,6 +937,9 @@ function EditorScreen() {
             const rawContent = coerceMessageContent(data.choices[0].message.content);
             filledContent = sanitizeModelContent(rawContent);
             
+            // Ensure proper spacing so words don't mash together
+            filledContent = ensureSpacing(beforeSlash, filledContent, afterSlash);
+            
             // Add color dot - size from latency, color from tokens
             const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || filledContent.length / 4;
             addColorDot(latencyMs, tokensUsed);
@@ -1001,12 +1035,15 @@ function EditorScreen() {
       
       if (data.choices && data.choices.length > 0) {
         const rawContent = coerceMessageContent(data.choices[0].message.content);
-        const cleanedContent = sanitizeModelContent(rawContent);
+        let cleanedContent = sanitizeModelContent(rawContent);
 
         if (!cleanedContent) {
           setText(prev => prev.replace(placeholder, ''));
           return;
         }
+
+        // Ensure proper spacing so words don't mash together
+        cleanedContent = ensureSpacing(prefix, cleanedContent, suffix);
 
         // Add color dot - size from latency, color from tokens
         const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || cleanedContent.length / 4;
@@ -1418,6 +1455,7 @@ function EditorScreen() {
           notesButtonLabel={showingSavedNotes ? 'New' : 'Notes'}
           noteText={text}
           directAction={showingSavedNotes ? createNewNote : null}
+          onNewNote={createNewNote}
         />
 
       </SafeAreaView>
