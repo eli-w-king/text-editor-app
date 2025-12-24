@@ -146,6 +146,7 @@ function EditorScreen() {
   const slideAnim = useRef(new Animated.Value(0)).current;
   const isSaving = useRef(false); // Prevent concurrent saves
   const scrollViewRef = useRef(null);
+  const scrollY = useRef(new Animated.Value(0)).current; // Track scroll position for mini title
   
   // Gradient animation
   const gradientAnim = useRef(new Animated.Value(0)).current;
@@ -153,54 +154,58 @@ function EditorScreen() {
   // LLM trigger color dots - stored per note
   const [colorDots, setColorDots] = useState([]);
   const [colorFamily, setColorFamily] = useState(null); // Color family for current note
+  const blotCounter = useRef(0); // Track blots for occasional contrast color
   const screenDimensions = Dimensions.get('window');
+  
+  // Complementary color families - opposites on the color wheel
+  const complementaryFamilies = {
+    ocean: 'sunset',   // blue ↔ orange
+    sunset: 'ocean',   // orange ↔ blue
+    forest: 'bloom',   // green ↔ pink
+    bloom: 'forest',   // pink ↔ green
+  };
   
   // Color families - each note gets one randomly assigned
   const colorFamilies = {
     ocean: [
-      '#00FFFF', // Cyan
-      '#00BFFF', // Deep sky blue
-      '#1E90FF', // Dodger blue
       '#40E0D0', // Turquoise
-      '#00CED1', // Dark turquoise
-      '#5F9EA0', // Cadet blue
-      '#4169E1', // Royal blue
+      '#5BC0DE', // Soft sky blue
+      '#6BB3D9', // Medium blue
+      '#48D1CC', // Medium turquoise
+      '#66CDAA', // Medium aquamarine
+      '#7EC8E3', // Light cerulean
+      '#5DADE2', // Soft dodger blue
+      '#73C6B6', // Soft teal
     ],
     forest: [
-      '#00FF7F', // Spring green
-      '#7FFF00', // Chartreuse
-      '#ADFF2F', // Green yellow
-      '#32CD32', // Lime green
-      '#00FA9A', // Medium spring green
-      '#98FB98', // Pale green
+      '#66CDAA', // Medium aquamarine
+      '#7FD67F', // Medium spring green
+      '#8FBC8F', // Dark sea green
+      '#77DD77', // Pastel green
       '#90EE90', // Light green
+      '#98D98E', // Soft lime
+      '#7CCD7C', // Medium lime
+      '#88D498', // Soft mint
     ],
     sunset: [
-      '#FF4500', // Orange red
-      '#FF6347', // Tomato
-      '#FF7F50', // Coral
-      '#FFA500', // Orange
-      '#FFD700', // Gold
-      '#FF8C00', // Dark orange
-      '#FFDAB9', // Peach puff
+      '#FF9966', // Atomic tangerine
+      '#FFAB76', // Soft coral
+      '#FFB347', // Pastel orange
+      '#FFCC80', // Light orange
+      '#FFA07A', // Light salmon
+      '#FFB088', // Soft peach
+      '#FFBE76', // Warm honey
+      '#FFC299', // Apricot
     ],
     bloom: [
-      '#FF0080', // Hot pink
-      '#FF00FF', // Magenta
-      '#FF1493', // Deep pink
-      '#FF69B4', // Hot pink light
+      '#FF85A2', // Soft hot pink
+      '#E88FD0', // Medium orchid
       '#DA70D6', // Orchid
-      '#EE82EE', // Violet
       '#DDA0DD', // Plum
-    ],
-    aurora: [
-      '#00FFFF', // Cyan
-      '#FF00FF', // Magenta
-      '#00FF00', // Lime
-      '#7B68EE', // Medium slate blue
-      '#9370DB', // Medium purple
-      '#BA55D3', // Medium orchid
-      '#00CED1', // Dark turquoise
+      '#FF99CC', // Light pink
+      '#E6A8D7', // Soft mauve
+      '#F49AC2', // Pastel magenta
+      '#D291BC', // Soft lavender pink
     ],
   };
   
@@ -211,33 +216,17 @@ function EditorScreen() {
     return colorFamilyNames[Math.floor(Math.random() * colorFamilyNames.length)];
   };
   
-  // Generate random BRIGHT neon color
-  const getRandomBrightColor = () => {
-    const colors = [
-      '#FF0080', // Hot pink
-      '#00FFFF', // Cyan
-      '#FF00FF', // Magenta
-      '#00FF00', // Lime
-      '#FFFF00', // Yellow
-      '#FF4500', // Orange red
-      '#00FF7F', // Spring green
-      '#FF1493', // Deep pink
-      '#00BFFF', // Deep sky blue
-      '#7FFF00', // Chartreuse
-      '#FF69B4', // Hot pink light
-      '#1E90FF', // Dodger blue
-      '#ADFF2F', // Green yellow
-      '#FF6347', // Tomato
-      '#40E0D0', // Turquoise
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
-  
   // Get color based on token count within the note's color family
   // Few tokens = lighter/cooler shades, many tokens = more saturated/warmer shades
-  const getColorFromTokens = (tokens) => {
-    // Get current family colors, or pick one if not set
-    const family = colorFamily || getRandomColorFamily();
+  const getColorFromTokens = (tokens, useComplementary = false) => {
+    // Get current family, or pick one if not set
+    let family = colorFamily || getRandomColorFamily();
+    
+    // Use complementary family if requested (for accent blots)
+    if (useComplementary) {
+      family = complementaryFamilies[family] || 'ocean';
+    }
+    
     const familyColors = colorFamilies[family] || colorFamilies.ocean;
     
     // Normalize tokens to pick from different parts of the family palette
@@ -267,6 +256,12 @@ function EditorScreen() {
   
   // Add a new color dot - size from latency, color from tokens
   const addColorDot = (latencyMs = 500, tokens = 20) => {
+    // Increment blot counter
+    blotCounter.current += 1;
+    
+    // Every 8-12 blots, add a complementary accent color
+    const isAccentBlot = blotCounter.current >= 8 && blotCounter.current % (8 + Math.floor(Math.random() * 5)) === 0;
+    
     // Latency-based size: larger for better glow diffusion
     const minLatency = 200;
     const maxLatency = 2500;
@@ -281,14 +276,42 @@ function EditorScreen() {
     // Start position below where it will end up (bubbling up effect)
     const riseDistance = 20 + Math.random() * 30; // 20-50px rise
     
+    // Generate watercolor blot shapes - multiple overlapping irregular circles
+    const blotShapes = [];
+    const numShapes = 5 + Math.floor(Math.random() * 4); // 5-8 shapes per blot
+    const baseColor = getColorFromTokens(tokens, isAccentBlot);
+    const family = isAccentBlot 
+      ? complementaryFamilies[colorFamily || 'ocean'] 
+      : (colorFamily || getRandomColorFamily());
+    const familyColors = colorFamilies[family] || colorFamilies.ocean;
+    
+    for (let i = 0; i < numShapes; i++) {
+      // Pick a slightly different color from the family for variation
+      const shapeColor = Math.random() > 0.4 
+        ? baseColor 
+        : familyColors[Math.floor(Math.random() * familyColors.length)];
+      
+      blotShapes.push({
+        offsetX: (Math.random() - 0.5) * targetSize * 0.7,
+        offsetY: (Math.random() - 0.5) * targetSize * 0.7,
+        scale: 0.25 + Math.random() * 0.75, // 25-100% of main size
+        opacity: 0.15 + Math.random() * 0.35, // 15-50% opacity (softer)
+        rotation: Math.random() * 360,
+        scaleX: 0.6 + Math.random() * 0.8,
+        scaleY: 0.6 + Math.random() * 0.8,
+        color: shapeColor, // Each shape can have slightly different color
+      });
+    }
+    
     const newDot = {
       id: Date.now() + Math.random(),
       x: Math.random() * screenDimensions.width,
       y: Math.random() * screenDimensions.height,
       color: getColorFromTokens(tokens),
       size: targetSize,
+      blotShapes, // Watercolor blot shapes
       opacity: new Animated.Value(0),
-      scale: new Animated.Value(0.6),
+      scale: new Animated.Value(0.3), // Start very small for graceful bloom
       translateX: new Animated.Value(0),
       translateY: new Animated.Value(riseDistance), // Start below
       driftX,
@@ -297,56 +320,61 @@ function EditorScreen() {
     
     setColorDots(prev => [...prev, newDot]);
     
-    // Ultra subtle glow effect
-    const targetOpacity = 0.08 + Math.random() * 0.12; // 0.08-0.20 opacity (very ghostly)
-    const duration = 3000 + Math.random() * 2000; // 3000-5000ms (very slow)
+    // Ultra graceful fade in - like watercolor bleeding into paper
+    const targetOpacity = 0.05 + Math.random() * 0.10; // 0.05-0.15 opacity
+    const duration = 5000 + Math.random() * 3000; // 5-8 seconds (very slow bloom)
     
-    Animated.parallel([
-      // Very slow fade in
-      Animated.timing(newDot.opacity, {
-        toValue: targetOpacity,
-        duration: duration,
-        useNativeDriver: true,
-        easing: Easing.out(Easing.quad),
-      }),
-      // Gentle scale
-      Animated.timing(newDot.scale, {
-        toValue: 1,
-        duration: duration,
-        useNativeDriver: true,
-        easing: Easing.out(Easing.quad),
-      }),
-      // Bubble up - rise from below
-      Animated.timing(newDot.translateY, {
-        toValue: 0,
-        duration: duration * 1.2,
-        useNativeDriver: true,
-        easing: Easing.out(Easing.cubic),
-      }),
-    ]).start(() => {
-      // Organic free-floating drift - wanders to random positions continuously
-      const wanderDrift = () => {
-        const nextX = (Math.random() - 0.5) * 30; // Random target within ±15px
-        const nextY = (Math.random() - 0.5) * 20; // Random target within ±10px
-        const duration = 8000 + Math.random() * 12000; // 8-20 seconds to next position
-        
-        Animated.parallel([
-          Animated.timing(newDot.translateX, {
-            toValue: nextX,
-            duration: duration,
-            useNativeDriver: true,
-            easing: Easing.inOut(Easing.sin),
-          }),
-          Animated.timing(newDot.translateY, {
-            toValue: nextY,
-            duration: duration * (0.7 + Math.random() * 0.6), // Slightly different Y timing
-            useNativeDriver: true,
-            easing: Easing.inOut(Easing.sin),
-          }),
+    // Stagger the animation start slightly for organic feel
+    const delay = Math.random() * 500;
+    
+    setTimeout(() => {
+      Animated.parallel([
+        // Very slow fade in with gentle sine easing
+        Animated.timing(newDot.opacity, {
+          toValue: targetOpacity,
+          duration: duration,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.sin),
+        }),
+        // Start smaller, grow very slowly
+        Animated.timing(newDot.scale, {
+          toValue: 1,
+          duration: duration * 1.3,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.sin),
+        }),
+        // Gentle rise from below
+        Animated.timing(newDot.translateY, {
+          toValue: 0,
+          duration: duration * 1.5,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.sin),
+        }),
+      ]).start(() => {
+        // Organic free-floating drift - wanders to random positions continuously
+        const wanderDrift = () => {
+          const nextX = (Math.random() - 0.5) * 30; // Random target within ±15px
+          const nextY = (Math.random() - 0.5) * 20; // Random target within ±10px
+          const duration = 8000 + Math.random() * 12000; // 8-20 seconds to next position
+          
+          Animated.parallel([
+            Animated.timing(newDot.translateX, {
+              toValue: nextX,
+              duration: duration,
+              useNativeDriver: true,
+              easing: Easing.inOut(Easing.sin),
+            }),
+            Animated.timing(newDot.translateY, {
+              toValue: nextY,
+              duration: duration * (0.7 + Math.random() * 0.6), // Slightly different Y timing
+              useNativeDriver: true,
+              easing: Easing.inOut(Easing.sin),
+            }),
         ]).start(() => wanderDrift()); // Pick a new random destination when done
       };
       wanderDrift();
     });
+    }, delay);
   };
   
   // Start gradient animation loop
@@ -427,6 +455,7 @@ function EditorScreen() {
           y: dot.y,
           color: dot.color,
           size: dot.size,
+          blotShapes: dot.blotShapes || [], // Save watercolor shapes
           opacityValue: typeof dot.opacity === 'object' ? (dot.opacity._value || 0.8) : (dot.opacity || 0.8),
         })),
       };
@@ -494,10 +523,39 @@ function EditorScreen() {
   const openNote = (note) => {
     // Load the note's saved dots
     const savedDots = note.colorDots || [];
-    const restoredDots = savedDots.map(dot => ({
-      ...dot,
-      opacity: new Animated.Value(dot.opacityValue || 0.8),
-    }));
+    const family = note.colorFamily || 'ocean';
+    const familyColors = colorFamilies[family] || colorFamilies.ocean;
+    
+    const restoredDots = savedDots.map(dot => {
+      // Generate blotShapes for old dots that don't have them
+      let blotShapes = dot.blotShapes;
+      if (!blotShapes || blotShapes.length === 0) {
+        blotShapes = [];
+        const numShapes = 5 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < numShapes; i++) {
+          // Pick varied colors from the family
+          const shapeColor = Math.random() > 0.4 
+            ? dot.color 
+            : familyColors[Math.floor(Math.random() * familyColors.length)];
+          
+          blotShapes.push({
+            offsetX: (Math.random() - 0.5) * dot.size * 0.7,
+            offsetY: (Math.random() - 0.5) * dot.size * 0.7,
+            scale: 0.25 + Math.random() * 0.75,
+            opacity: 0.15 + Math.random() * 0.35,
+            rotation: Math.random() * 360,
+            scaleX: 0.6 + Math.random() * 0.8,
+            scaleY: 0.6 + Math.random() * 0.8,
+            color: shapeColor,
+          });
+        }
+      }
+      return {
+        ...dot,
+        blotShapes,
+        opacity: new Animated.Value(dot.opacityValue || 0.1),
+      };
+    });
     setColorDots(restoredDots);
     setColorFamily(note.colorFamily || null); // Restore the note's color family
     
@@ -517,6 +575,7 @@ function EditorScreen() {
     // Clear dots and assign new color family for new note
     setColorDots([]);
     setColorFamily(getRandomColorFamily());
+    blotCounter.current = 0; // Reset blot counter for new note
     
     setText('');
     setTitle('New Note');
@@ -1005,19 +1064,15 @@ function EditorScreen() {
         />
       </Animated.View>
       
-      {/* LLM Trigger Color Dots - behind the blur */}
+      {/* LLM Trigger Color Dots - watercolor ink blot effect */}
       <View style={[StyleSheet.absoluteFill]} pointerEvents="none">
         {colorDots.map(dot => (
           <Animated.View
             key={dot.id}
             style={{
               position: 'absolute',
-              left: dot.x - dot.size / 2,
-              top: dot.y - dot.size / 2,
-              width: dot.size,
-              height: dot.size,
-              borderRadius: dot.size / 2,
-              backgroundColor: dot.color,
+              left: dot.x,
+              top: dot.y,
               opacity: dot.opacity,
               transform: [
                 { scale: dot.scale || 1 },
@@ -1025,7 +1080,29 @@ function EditorScreen() {
                 { translateY: dot.translateY || 0 },
               ],
             }}
-          />
+          >
+            {/* Render multiple overlapping shapes for watercolor effect */}
+            {(dot.blotShapes || []).map((shape, i) => (
+              <View
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: shape.offsetX - (dot.size * shape.scale) / 2,
+                  top: shape.offsetY - (dot.size * shape.scale) / 2,
+                  width: dot.size * shape.scale,
+                  height: dot.size * shape.scale,
+                  borderRadius: (dot.size * shape.scale) / 2,
+                  backgroundColor: shape.color || dot.color,
+                  opacity: shape.opacity,
+                  transform: [
+                    { rotate: `${shape.rotation}deg` },
+                    { scaleX: shape.scaleX },
+                    { scaleY: shape.scaleY },
+                  ],
+                }}
+              />
+            ))}
+          </Animated.View>
         ))}
       </View>
       
@@ -1056,28 +1133,129 @@ function EditorScreen() {
               <View style={{ flex: 1 }}>
                 <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
 
+              {/* Sticky header - contains the single animated title */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  left: 0,
+                  zIndex: 100,
+                }}
+                pointerEvents="none"
+              >
+                {/* Ambient blur background - heavily overlapped for seamless falloff */}
+                <Animated.View
+                  style={{
+                    position: 'absolute',
+                    top: -50,
+                    left: 0,
+                    right: 0,
+                    height: 190,
+                    opacity: scrollY.interpolate({
+                      inputRange: [0, 80, 140],
+                      outputRange: [0, 0.3, 1],
+                      extrapolate: 'clamp',
+                    }),
+                  }}
+                >
+                  {/* Layers heavily overlap to blend seamlessly */}
+                  <BlurView
+                    intensity={30}
+                    tint={theme === 'light' ? 'light' : 'dark'}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 130 }}
+                  />
+                  <BlurView
+                    intensity={25}
+                    tint={theme === 'light' ? 'light' : 'dark'}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 140 }}
+                  />
+                  <BlurView
+                    intensity={20}
+                    tint={theme === 'light' ? 'light' : 'dark'}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 150 }}
+                  />
+                  <BlurView
+                    intensity={15}
+                    tint={theme === 'light' ? 'light' : 'dark'}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 160 }}
+                  />
+                  <BlurView
+                    intensity={10}
+                    tint={theme === 'light' ? 'light' : 'dark'}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 170 }}
+                  />
+                  <BlurView
+                    intensity={5}
+                    tint={theme === 'light' ? 'light' : 'dark'}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 180 }}
+                  />
+                  <BlurView
+                    intensity={2}
+                    tint={theme === 'light' ? 'light' : 'dark'}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 190 }}
+                  />
+                </Animated.View>
+                
+                {/* Single animated title */}
+                <Animated.Text 
+                  numberOfLines={2}
+                  style={[
+                    { 
+                      color: Colors[theme].text,
+                      paddingHorizontal: 24,
+                      fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+                      paddingTop: scrollY.interpolate({
+                        inputRange: [0, 120],
+                        outputRange: [140, 54],
+                        extrapolate: 'clamp',
+                      }),
+                      paddingBottom: 4,
+                      fontSize: scrollY.interpolate({
+                        inputRange: [0, 120],
+                        outputRange: [42, 17],
+                        extrapolate: 'clamp',
+                      }),
+                      fontWeight: '400',
+                      letterSpacing: -0.5,
+                    }
+                  ]}
+                >
+                  {title}
+                </Animated.Text>
+                
+                {/* Date - just fades out naturally */}
+                <Animated.Text style={{ 
+                  paddingHorizontal: 24, 
+                  fontSize: 12, 
+                  color: theme === 'light' ? '#687076' : '#9BA1A6',
+                  fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+                  marginBottom: 16,
+                  opacity: scrollY.interpolate({
+                    inputRange: [0, 60, 100],
+                    outputRange: [1, 0.3, 0],
+                    extrapolate: 'clamp',
+                  }),
+                }}>
+                  {currentDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                </Animated.Text>
+              </Animated.View>
+
               {/* Editor */}
               <ScrollView 
                 ref={scrollViewRef}
                 style={styles.editorWrapper}
-                contentContainerStyle={{ flexGrow: 1, paddingTop: '20%', paddingBottom: 100 }}
+                contentContainerStyle={{ flexGrow: 1, paddingTop: 280, paddingBottom: 100 }}
                 keyboardDismissMode="interactive"
                 keyboardShouldPersistTaps="handled"
+                onScroll={Animated.event(
+                  [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                  { useNativeDriver: false }
+                )}
+                scrollEventThrottle={16}
               >
-                {/* Header */}
-                <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 4 }]}>{title}</Text>
-                <Text style={{ 
-                  paddingHorizontal: 24, 
-                  fontSize: 12, 
-                  color: theme === 'light' ? '#687076' : '#9BA1A6',
-                  marginBottom: 16,
-                  fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif'
-                }}>
-                  {currentDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                </Text>
-
                 <TextInput
-                  style={[styles.editor, { minHeight: '100%', color: Colors[theme].text }]}
+                  style={[styles.editor, { minHeight: '100%', color: Colors[theme].text, marginTop: 16 }]}
                   multiline
                   scrollEnabled={false}
                   value={text}
