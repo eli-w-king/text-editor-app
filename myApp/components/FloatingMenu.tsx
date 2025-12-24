@@ -15,19 +15,22 @@ interface FloatingMenuProps {
   debugData?: { sentMessages: any; rawResponse: any };
   onNotesPress?: (() => void) | null;
   notesButtonLabel?: string;
+  noteText?: string;
+  directAction?: (() => void) | null;
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel, noteText, directAction }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
-  const [corner, setCorner] = useState<'bottomLeft' | 'bottomRight'>('bottomRight');
+  const [corner, setCorner] = useState<'bottomLeft' | 'bottomRight'>('bottomLeft');
+  const [devModeEnabled, setDevModeEnabled] = useState(false);
   const animation = useRef(new Animated.Value(0)).current;
   const expansionAnim = useRef(new Animated.Value(0)).current;
   const debugAnim = useRef(new Animated.Value(0)).current;
   const keyboardAnim = useRef(new Animated.Value(0)).current;
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
-  const positionX = useRef(new Animated.Value(screenWidth - 60 - 20)).current;
+  const positionX = useRef(new Animated.Value(20)).current;
   const positionY = useRef(new Animated.Value(40)).current;
   const dragOffset = useRef({ x: 0, y: 0 });
   const debugPanelWidth = screenWidth - 110; // 20 (left) + 60 (menu) + 10 (gap) + 20 (right margin)
@@ -76,6 +79,17 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
     })
   ).current;
 
+  // Dev mode secret phrase detection
+  useEffect(() => {
+    if (!noteText) return;
+    const lowerText = noteText.toLowerCase();
+    if (lowerText.includes('dev mode boing boing hide')) {
+      setDevModeEnabled(false);
+    } else if (lowerText.includes('dev mode boing boing')) {
+      setDevModeEnabled(true);
+    }
+  }, [noteText]);
+
   useEffect(() => {
     Animated.timing(debugAnim, {
       toValue: debugMode ? 1 : 0,
@@ -120,7 +134,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
   const getThemeColors = () => {
     switch (theme) {
       case 'light': return { bg: 'rgba(255,255,255,0.3)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
-      case 'dark': return { bg: 'rgba(28,28,30,0.3)', icon: 'white', secondary: 'rgba(255,255,255,0.12)', label: '#8E8E93', glow: 'rgba(255,255,255,0.15)' };
+      case 'dark': return { bg: 'rgba(40,40,42,0.5)', icon: 'white', secondary: 'rgba(255,255,255,0.12)', label: '#8E8E93', glow: 'rgba(255,255,255,0.15)' };
       default: return { bg: 'rgba(255,255,255,0.3)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
     }
   };
@@ -175,7 +189,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const baseHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [60, 330],
+    outputRange: [60, 280],
   });
   
   const extraHeight = expansionAnim.interpolate({
@@ -255,41 +269,45 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
         <Animated.View style={[styles.openContent, { opacity }]} pointerEvents={isOpen ? 'auto' : 'none'}>
            <View style={styles.optionsWrapper}>
              {/* Theme Section */}
-             <Animated.View style={{ height: wrapperHeight, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
+             <View style={{ width: '100%', alignItems: 'center' }}>
+                 <Animated.View style={{ height: wrapperHeight, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
                  
-                 {/* Theme Button */}
-                 <Animated.View style={{ position: 'absolute', opacity: themeButtonOpacity, alignItems: 'center' }} pointerEvents={showThemeOptions ? 'none' : 'auto'}>
-                    <TouchableOpacity onPress={toggleThemeOptions} style={styles.optionItem}>
-                        <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
-                            <Ionicons name="contrast-outline" size={24} color={iconColor} />
-                        </View>
-                        <Text style={[styles.label, { color: labelColor }]}>Theme</Text>
-                    </TouchableOpacity>
+                   {/* Theme Button */}
+                   <Animated.View style={{ position: 'absolute', opacity: themeButtonOpacity, alignItems: 'center' }} pointerEvents={showThemeOptions ? 'none' : 'auto'}>
+                      <TouchableOpacity onPress={toggleThemeOptions} style={styles.optionItem}>
+                          <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
+                              <Ionicons name="contrast-outline" size={24} color={iconColor} />
+                          </View>
+                          <Text style={[styles.label, { color: labelColor }]}>Theme</Text>
+                      </TouchableOpacity>
+                   </Animated.View>
+
+                   {/* Theme List */}
+                   <Animated.View style={{ position: 'absolute', opacity: themeListOpacity, height: 90, justifyContent: 'space-between', paddingVertical: 5 }} pointerEvents={showThemeOptions ? 'auto' : 'none'}>
+                      <TouchableOpacity onPress={() => handleThemeSelect('light')} style={[styles.colorOption, { backgroundColor: 'white', borderWidth: StyleSheet.hairlineWidth, borderColor: '#999' }]} />
+                      <TouchableOpacity onPress={() => handleThemeSelect('dark')} style={[styles.colorOption, { backgroundColor: '#1C1C1E' }]} />
+                   </Animated.View>
+
                  </Animated.View>
+             </View>
 
-                 {/* Theme List */}
-                 <Animated.View style={{ position: 'absolute', opacity: themeListOpacity, height: 90, justifyContent: 'space-between', paddingVertical: 5 }} pointerEvents={showThemeOptions ? 'auto' : 'none'}>
-                    <TouchableOpacity onPress={() => handleThemeSelect('light')} style={[styles.colorOption, { backgroundColor: 'white', borderWidth: StyleSheet.hairlineWidth, borderColor: '#999' }]} />
-                    <TouchableOpacity onPress={() => handleThemeSelect('dark')} style={[styles.colorOption, { backgroundColor: '#1C1C1E' }]} />
-                 </Animated.View>
-
-             </Animated.View>
-
-             {/* Debug Option */}
-             <TouchableOpacity onPress={toggleDebug} style={styles.optionItem}>
-               <View style={[
-                 styles.iconCircle, 
-                 { backgroundColor: secondaryBg }, 
-                 debugMode && { backgroundColor: theme === 'light' ? '#000' : '#fff' }
-               ]}>
-                  <Ionicons 
-                    name="code-slash-outline" 
-                    size={24} 
-                    color={debugMode ? (theme === 'light' ? 'white' : 'black') : iconColor} 
-                  />
-               </View>
-               <Text style={[styles.label, { color: labelColor }]}>Debug</Text>
-             </TouchableOpacity>
+             {/* Debug Option - only show if dev mode enabled */}
+             {devModeEnabled && (
+               <TouchableOpacity onPress={toggleDebug} style={styles.optionItem}>
+                 <View style={[
+                   styles.iconCircle, 
+                   { backgroundColor: secondaryBg }, 
+                   debugMode && { backgroundColor: theme === 'light' ? '#000' : '#fff' }
+                 ]}>
+                    <Ionicons 
+                      name="code-slash-outline" 
+                      size={24} 
+                      color={debugMode ? (theme === 'light' ? 'white' : 'black') : iconColor} 
+                    />
+                 </View>
+                 <Text style={[styles.label, { color: labelColor }]}>Debug</Text>
+               </TouchableOpacity>
+             )}
 
              {/* API Option */}
              <TouchableOpacity onPress={onConnectPress} style={styles.optionItem}>
@@ -316,9 +334,6 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                </TouchableOpacity>
              )}
            </View>
-
-           {/* Spacer to preserve layout where close button was */}
-           <View style={{ height: 50 }} />
         </Animated.View>
 
         {/* Shared Morphing Button */}
@@ -333,7 +348,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
             justifyContent: 'center',
             zIndex: 10
         }}>
-          <TouchableOpacity onPress={toggleMenu} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+          <TouchableOpacity onPress={directAction || toggleMenu} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
             <Animated.View style={{ transform: [{ rotate: buttonRotation }] }}>
                 <Ionicons name="add" size={28} color={iconColor} />
             </Animated.View>
@@ -487,8 +502,8 @@ const styles = StyleSheet.create({
     width: 60,
     height: '100%',
     alignItems: 'center',
-    paddingTop: 5,
-    paddingBottom: 10,
+    paddingTop: 15,
+    paddingBottom: 60,
   },
   closeButton: {
     width: 40,
@@ -500,12 +515,13 @@ const styles = StyleSheet.create({
   },
   optionsWrapper: {
     flex: 1,
-    justifyContent: 'space-evenly',
+    justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
   },
   optionItem: {
     alignItems: 'center',
+    justifyContent: 'center',
   },
   iconCircle: {
     width: 44,

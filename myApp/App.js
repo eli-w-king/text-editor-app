@@ -163,6 +163,8 @@ function EditorScreen() {
     sunset: 'ocean',   // orange ↔ blue
     forest: 'bloom',   // green ↔ pink
     bloom: 'forest',   // pink ↔ green
+    earth: 'ocean',    // brown ↔ blue
+    plum: 'forest',    // purple ↔ green
   };
   
   // Color families - each note gets one randomly assigned
@@ -206,6 +208,26 @@ function EditorScreen() {
       '#E6A8D7', // Soft mauve
       '#F49AC2', // Pastel magenta
       '#D291BC', // Soft lavender pink
+    ],
+    earth: [
+      '#8B7355', // Burly wood brown
+      '#A0826D', // Beaver
+      '#987654', // Pale brown
+      '#B08968', // Tan
+      '#9C7C5B', // Coyote brown
+      '#A67B5B', // Chamoisee
+      '#8E735B', // Shadow brown
+      '#B5906D', // Camel
+    ],
+    plum: [
+      '#8E4585', // Plum
+      '#9B59B6', // Amethyst
+      '#7B3F6B', // Byzantium
+      '#915F78', // Mauve taupe
+      '#A569BD', // Medium purple
+      '#8E5C7B', // Antique fuchsia
+      '#7D4E6B', // Eggplant
+      '#9A6B8C', // Opera mauve
     ],
   };
   
@@ -1029,8 +1051,8 @@ function EditorScreen() {
         };
       case 'dark':
         return {
-          start: ['#151718', '#1a1d1e', '#151718'],
-          end: ['#1a1d1e', '#151718', '#1a1d1e'],
+          start: ['#000000', '#0a0a0a', '#000000'],
+          end: ['#0a0a0a', '#000000', '#0a0a0a'],
         };
       default:
         return {
@@ -1295,25 +1317,6 @@ function EditorScreen() {
                 Notes
               </Text>
 
-            {/* Clear All Button - only show if there are many notes */}
-            {notes.length > 10 && (
-              <TouchableOpacity 
-                style={{ paddingVertical: 12, marginBottom: 8 }}
-                onPress={() => {
-                  Alert.alert(
-                    'Clear All Notes?',
-                    `This will delete all ${notes.length} notes. This cannot be undone.`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete All', style: 'destructive', onPress: clearAllNotes },
-                    ]
-                  );
-                }}
-              >
-                <Text style={{ color: '#FF3B30', fontSize: 15 }}>Clear All Notes</Text>
-              </TouchableOpacity>
-            )}
-
             {savedNotes.length === 0 ? (
               <View style={savedNotesOverlayStyles.emptyState}>
                 <Text style={{ color: theme === 'light' ? '#999' : '#8E8E93', fontSize: 16 }}>
@@ -1322,18 +1325,14 @@ function EditorScreen() {
               </View>
             ) : (
               savedNotes.slice(0, 50).map(note => {
-                const isCurrentNote = note.id === currentNoteId;
                 return (
                   <TouchableOpacity 
                     key={note.id}
-                    style={[
-                      { 
-                        paddingVertical: 16,
-                        borderBottomWidth: StyleSheet.hairlineWidth,
-                        borderBottomColor: 'rgba(255,255,255,0.2)',
-                      },
-                      isCurrentNote && { opacity: 0.5 }
-                    ]}
+                    style={{ 
+                      paddingVertical: 16,
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: 'rgba(255,255,255,0.2)',
+                    }}
                     onPress={() => openNote(note)}
                   >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1417,6 +1416,8 @@ function EditorScreen() {
           debugData={debugData}
           onNotesPress={showingSavedNotes ? createNewNote : showSavedNotesView}
           notesButtonLabel={showingSavedNotes ? 'New' : 'Notes'}
+          noteText={text}
+          directAction={showingSavedNotes ? createNewNote : null}
         />
 
       </SafeAreaView>
