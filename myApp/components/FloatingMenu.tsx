@@ -26,11 +26,10 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
   const debugAnim = useRef(new Animated.Value(0)).current;
   const keyboardAnim = useRef(new Animated.Value(0)).current;
   const screenWidth = Dimensions.get('window').width;
+  const screenHeight = Dimensions.get('window').height;
   const positionX = useRef(new Animated.Value(screenWidth - 60 - 20)).current;
   const positionY = useRef(new Animated.Value(40)).current;
   const dragOffset = useRef({ x: 0, y: 0 });
-  const screenWidth = Dimensions.get('window').width;
-  const screenHeight = Dimensions.get('window').height;
   const debugPanelWidth = screenWidth - 110; // 20 (left) + 60 (menu) + 10 (gap) + 20 (right margin)
   const menuWidth = 60;
   const margin = 20;
@@ -92,7 +91,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => {
         Animated.timing(keyboardAnim, {
-          toValue: e.endCoordinates.height,
+          toValue: e.endCoordinates.height - 25,
           duration: 250,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: false,
@@ -120,9 +119,9 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
   const getThemeColors = () => {
     switch (theme) {
-      case 'light': return { bg: 'rgba(255,255,255,0.8)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
-      case 'dark': return { bg: 'rgba(28,28,30,0.8)', icon: 'white', secondary: 'rgba(255,255,255,0.12)', label: '#8E8E93', glow: 'rgba(255,255,255,0.15)' };
-      default: return { bg: 'rgba(255,255,255,0.8)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
+      case 'light': return { bg: 'rgba(255,255,255,0.3)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
+      case 'dark': return { bg: 'rgba(28,28,30,0.3)', icon: 'white', secondary: 'rgba(255,255,255,0.12)', label: '#8E8E93', glow: 'rgba(255,255,255,0.15)' };
+      default: return { bg: 'rgba(255,255,255,0.3)', icon: '#000', secondary: 'rgba(0,0,0,0.08)', label: '#666', glow: 'rgba(255,255,255,0.9)' };
     }
   };
 
@@ -168,6 +167,10 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
   const handleThemeSelect = (t: any) => {
       setTheme(t);
       toggleThemeOptions();
+      // Auto close menu after theme selection
+      setTimeout(() => {
+        toggleMenu();
+      }, 200);
   }
 
   const baseHeight = animation.interpolate({
@@ -402,9 +405,12 @@ const styles = StyleSheet.create({
     width: 60,
     borderRadius: 30,
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.15)',
     zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   debugPanel: {
     position: 'absolute',

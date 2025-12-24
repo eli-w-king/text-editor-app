@@ -1240,7 +1240,7 @@ function EditorScreen() {
               <ScrollView 
                 ref={scrollViewRef}
                 style={styles.editorWrapper}
-                contentContainerStyle={{ flexGrow: 1, paddingTop: 280, paddingBottom: 100 }}
+                contentContainerStyle={{ flexGrow: 1, paddingTop: 280, paddingBottom: 300 }}
                 keyboardDismissMode="interactive"
                 keyboardShouldPersistTaps="handled"
                 automaticallyAdjustKeyboardInsets={true}
