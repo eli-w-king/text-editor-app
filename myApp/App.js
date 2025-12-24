@@ -1124,11 +1124,6 @@ function EditorScreen() {
       
       <SafeAreaView style={{ flex: 1 }}>
         <Animated.View style={{ flex: 1, opacity: editorOpacity }}>
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{ flex: 1 }}
-            keyboardVerticalOffset={0}
-          >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
               <View style={{ flex: 1 }}>
                 <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
@@ -1248,6 +1243,7 @@ function EditorScreen() {
                 contentContainerStyle={{ flexGrow: 1, paddingTop: 280, paddingBottom: 100 }}
                 keyboardDismissMode="interactive"
                 keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets={true}
                 onScroll={Animated.event(
                   [{ nativeEvent: { contentOffset: { y: scrollY } } }],
                   { useNativeDriver: false }
@@ -1260,12 +1256,6 @@ function EditorScreen() {
                   scrollEnabled={false}
                   value={text}
                   onChangeText={handleTextChange}
-                  onSelectionChange={() => {
-                    // Scroll to keep cursor visible
-                    setTimeout(() => {
-                      scrollViewRef.current?.scrollToEnd({ animated: true });
-                    }, 100);
-                  }}
                   placeholder="Type / for blanks, // to fill them"
                   placeholderTextColor="#9ca3af"
                   textAlignVertical="top"
@@ -1273,7 +1263,6 @@ function EditorScreen() {
               </ScrollView>
             </View>
           </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
         </Animated.View>
 
         {/* Saved Notes Overlay */}

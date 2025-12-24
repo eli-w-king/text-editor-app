@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, TouchableOpacity, StyleSheet, Animated, Text, Easing, ScrollView, Platform, Dimensions } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Animated, Text, Easing, ScrollView, Platform, Dimensions, Keyboard, PanResponder } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -20,11 +20,62 @@ interface FloatingMenuProps {
 export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
+  const [corner, setCorner] = useState<'bottomLeft' | 'bottomRight'>('bottomRight');
   const animation = useRef(new Animated.Value(0)).current;
   const expansionAnim = useRef(new Animated.Value(0)).current;
   const debugAnim = useRef(new Animated.Value(0)).current;
+  const keyboardAnim = useRef(new Animated.Value(0)).current;
   const screenWidth = Dimensions.get('window').width;
+  const positionX = useRef(new Animated.Value(screenWidth - 60 - 20)).current;
+  const positionY = useRef(new Animated.Value(40)).current;
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const screenWidth = Dimensions.get('window').width;
+  const screenHeight = Dimensions.get('window').height;
   const debugPanelWidth = screenWidth - 110; // 20 (left) + 60 (menu) + 10 (gap) + 20 (right margin)
+  const menuWidth = 60;
+  const margin = 20;
+
+  // Corner positions
+  const corners = {
+    bottomLeft: { x: margin, y: margin },
+    bottomRight: { x: screenWidth - menuWidth - margin, y: margin },
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only respond to horizontal drag
+        return Math.abs(gestureState.dx) > 5;
+      },
+      onPanResponderGrant: () => {
+        // Store current position as offset
+        positionX.stopAnimation((value) => { dragOffset.current.x = value; });
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Only allow horizontal movement
+        positionX.setValue(dragOffset.current.x + gestureState.dx);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // Calculate center of menu after drag
+        const currentX = dragOffset.current.x + gestureState.dx + menuWidth / 2;
+        
+        // Determine which corner to snap to (left or right)
+        const isRight = currentX > screenWidth / 2;
+        const targetCorner: 'bottomLeft' | 'bottomRight' = isRight ? 'bottomRight' : 'bottomLeft';
+        
+        setCorner(targetCorner);
+        
+        // Animate to corner
+        Animated.spring(positionX, {
+          toValue: corners[targetCorner].x,
+          useNativeDriver: false,
+          friction: 7,
+          tension: 100,
+        }).start();
+      },
+    })
+  ).current;
 
   useEffect(() => {
     Animated.timing(debugAnim, {
@@ -34,6 +85,38 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
       easing: Easing.bezier(0.4, 0.0, 0.2, 1),
     }).start();
   }, [debugMode]);
+
+  // Keyboard listeners for floating position
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        Animated.timing(keyboardAnim, {
+          toValue: e.endCoordinates.height,
+          duration: 250,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        Animated.timing(keyboardAnim, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, []);
 
   const getThemeColors = () => {
     switch (theme) {
@@ -146,8 +229,17 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
       outputRange: [0, 1]
   });
 
+  // Animated bottom position (base position + keyboard height)
+  const animatedBottom = Animated.add(positionY, keyboardAnim);
+
   return (
-    <View style={styles.container}>
+    <Animated.View 
+      style={[styles.container, { 
+        left: positionX, 
+        bottom: animatedBottom,
+      }]}
+      {...panResponder.panHandlers}
+    >
       <Animated.View style={[styles.menuContainer, { height: containerHeight, backgroundColor: 'transparent', overflow: 'hidden' }]}>
         {/* Blur Background */}
         <BlurView
@@ -247,7 +339,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
 
       </Animated.View>
 
-      {/* Debug Panel - Positioned to the right */}
+      {/* Debug Panel - Positioned based on corner */}
       <Animated.View style={[
           styles.debugPanel, 
           { 
@@ -255,8 +347,10 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
               opacity: debugAnim,
               height: containerHeight, // Match menu height
               width: debugPanelWidth,
+              left: corner === 'bottomLeft' ? 70 : undefined,
+              right: corner === 'bottomRight' ? 70 : undefined,
               transform: [
-                  { translateX: debugAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) },
+                  { translateX: debugAnim.interpolate({ inputRange: [0, 1], outputRange: [corner === 'bottomLeft' ? -20 : 20, 0] }) },
                   { scale: debugAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }
               ],
           }
@@ -295,15 +389,13 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
           </ScrollView>
       </Animated.View>
 
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 40,
-    left: 20,
     zIndex: 100,
   },
   menuContainer: {
@@ -316,7 +408,6 @@ const styles = StyleSheet.create({
   },
   debugPanel: {
     position: 'absolute',
-    left: 70,
     bottom: 0,
     borderRadius: 20,
     padding: 16,
