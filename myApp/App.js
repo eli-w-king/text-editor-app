@@ -809,7 +809,7 @@ function EditorScreen() {
       // Easter egg: if editor is effectively empty, show Boing boing!
       if (prefix.trim() === '') {
         if (llmStatus !== 'connected') {
-          Alert.alert('Not Connected', 'Tap the status dot to connect OpenRouter.');
+          Alert.alert('LLM API Not Connected', 'Tap the Cloud button in the menu to add your OpenRouter API key.');
           setText(prefix + '//' + suffix);
           return;
         }
@@ -867,7 +867,7 @@ function EditorScreen() {
   // Batch fill: process each standalone / one at a time, sequentially
   const triggerBatchFill = async (prefix, suffix) => {
     if (llmStatus !== 'connected') {
-      Alert.alert('Not Connected', 'Tap the status dot to connect OpenRouter.');
+      Alert.alert('LLM API Not Connected', 'Tap the Cloud button in the menu to add your OpenRouter API key.');
       setText(prefix + '//' + suffix);
       return;
     }
@@ -978,7 +978,7 @@ function EditorScreen() {
 
   const triggerLLM = async (prefix, suffix) => {
     if (llmStatus !== 'connected') {
-      Alert.alert('Not Connected', 'Tap the status dot to connect OpenRouter.');
+      Alert.alert('LLM API Not Connected', 'Tap the Cloud button in the menu to add your OpenRouter API key.');
       setText(prefix + '//' + suffix);
       return;
     }
