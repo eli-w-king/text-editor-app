@@ -295,7 +295,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                    {/* Theme Button */}
                    <Animated.View style={{ position: 'absolute', opacity: themeButtonOpacity, alignItems: 'center' }} pointerEvents={showThemeOptions ? 'none' : 'auto'}>
                       <TouchableOpacity onPress={toggleThemeOptions} style={styles.optionItem}>
-                          <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
+                          <View style={[styles.iconCircle, { borderWidth: StyleSheet.hairlineWidth, borderColor: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }]}>
                               <Ionicons name="contrast-outline" size={24} color={iconColor} />
                           </View>
                           <Text style={[styles.label, { color: labelColor }]}>Theme</Text>
@@ -316,8 +316,8 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                <TouchableOpacity onPress={toggleDebug} style={styles.optionItem}>
                  <View style={[
                    styles.iconCircle, 
-                   { backgroundColor: secondaryBg }, 
-                   debugMode && { backgroundColor: theme === 'light' ? '#000' : '#fff' }
+                   { borderWidth: StyleSheet.hairlineWidth, borderColor: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }, 
+                   debugMode && { backgroundColor: theme === 'light' ? '#000' : '#fff', borderColor: theme === 'light' ? '#000' : '#fff' }
                  ]}>
                     <Ionicons 
                       name="code-slash-outline" 
@@ -333,7 +333,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
              <TouchableOpacity onPress={onConnectPress} style={styles.optionItem}>
                <View style={[
                  styles.iconCircle, 
-                 { backgroundColor: secondaryBg }
+                 { borderWidth: StyleSheet.hairlineWidth, borderColor: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }
                ]}>
                   <Ionicons 
                     name={llmStatus === 'connected' ? "cloud-done-outline" : "cloud-offline-outline"} 
@@ -347,7 +347,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
              {/* Notes Option */}
              {onNotesPress && (
                <TouchableOpacity onPress={() => { toggleMenu(); onNotesPress(); }} style={styles.optionItem}>
-                 <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
+                 <View style={[styles.iconCircle, { borderWidth: StyleSheet.hairlineWidth, borderColor: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }]}>
                     <Ionicons name={notesButtonLabel === 'New' ? 'add-outline' : 'document-text-outline'} size={24} color={iconColor} />
                  </View>
                  <Text style={[styles.label, { color: labelColor }]}>{notesButtonLabel || 'Notes'}</Text>
@@ -357,7 +357,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
              {/* New Note Option - only show when not on saved notes view */}
              {onNewNote && notesButtonLabel !== 'New' && (
                <TouchableOpacity onPress={() => { toggleMenu(); onNewNote(); }} style={styles.optionItem}>
-                 <View style={[styles.iconCircle, { backgroundColor: secondaryBg }]}>
+                 <View style={[styles.iconCircle, { borderWidth: StyleSheet.hairlineWidth, borderColor: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }]}>
                     <Ionicons name="add-outline" size={24} color={iconColor} />
                  </View>
                  <Text style={[styles.label, { color: labelColor }]}>New</Text>
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
