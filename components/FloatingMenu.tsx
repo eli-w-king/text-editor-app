@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, TouchableOpacity, StyleSheet, Animated, Text, Easing, ScrollView, Platform, Dimensions, Keyboard, PanResponder } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, Easing, Keyboard, PanResponder, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface FloatingMenuProps {
   debugMode: boolean;
@@ -16,12 +16,11 @@ interface FloatingMenuProps {
   onNotesPress?: (() => void) | null;
   notesButtonLabel?: string;
   noteText?: string;
-  directAction?: (() => void) | null;
   onNewNote?: (() => void) | null;
   hideApiButton?: boolean; // Hide API button when using proxy mode
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel, noteText, directAction, onNewNote, hideApiButton }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel, noteText, onNewNote, hideApiButton }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
   const [corner, setCorner] = useState<'bottomLeft' | 'bottomRight'>('bottomLeft');
@@ -389,7 +388,7 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
             justifyContent: 'center',
             zIndex: 10
         }}>
-          <TouchableOpacity onPress={directAction || toggleMenu} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+          <TouchableOpacity onPress={toggleMenu} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
             <Animated.View style={{ transform: [{ rotate: buttonRotation }] }}>
                 <Ionicons name="add" size={28} color={iconColor} />
             </Animated.View>

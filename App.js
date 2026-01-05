@@ -1638,7 +1638,6 @@ function EditorScreen() {
           onNotesPress={showingSavedNotes ? createNewNote : showSavedNotesView}
           notesButtonLabel={showingSavedNotes ? 'New' : 'Notes'}
           noteText={text}
-          directAction={showingSavedNotes ? createNewNote : null}
           onNewNote={createNewNote}
           hideApiButton={isProxyMode()}
         />
