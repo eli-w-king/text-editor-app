@@ -62,14 +62,42 @@ npm start
 ```
 
 ### API Configuration
-Writer uses [OpenRouter](https://openrouter.ai) for AI completions:
 
-1. Get an API key from [openrouter.ai](https://openrouter.ai)
-2. Tap the floating menu → **API**
-3. Enter your OpenRouter API key
-4. The status indicator turns green when connected
+Writer uses [OpenRouter](https://openrouter.ai) for AI completions. 
 
-**Model:** `google/gemini-2.5-flash-lite-preview-09-2025`
+**First, create your config file:**
+```bash
+cp constants/api.example.js constants/api.js
+```
+
+#### Option A: Quick Start (For Development)
+
+Use your own OpenRouter API key:
+
+1. Leave `PROXY_URL = null` in `constants/api.js`
+2. Get an API key from [openrouter.ai](https://openrouter.ai)
+3. Run the app and tap the menu → **API**
+4. Paste your API key
+
+#### Option B: Deploy a Backend (For Distribution)
+
+If you're distributing the app and don't want users to need API keys, deploy the included Cloudflare Worker:
+
+```bash
+cd backend
+npm install
+npx wrangler login    # Creates account if needed
+npx wrangler deploy   # Deploys your worker
+npx wrangler secret put OPENROUTER_API_KEY   # Paste your key when prompted
+```
+
+Copy the URL it gives you and update your `constants/api.js`:
+
+```javascript
+export const PROXY_URL = 'https://YOUR-WORKER-URL.workers.dev';
+```
+
+Now the app connects automatically—no API key needed for users!
 
 ## Project Structure
 
@@ -81,11 +109,16 @@ text-editor-app/
 │   ├── modal.tsx               # Modal screen
 │   └── note/
 │       └── [id].tsx            # Note editor (dynamic route)
+├── backend/                    # Cloudflare Worker API proxy
+│   ├── worker.js               # Worker code
+│   ├── wrangler.toml           # Wrangler configuration
+│   └── README.md               # Deployment instructions
 ├── components/
 │   ├── FloatingMenu.tsx        # Draggable floating action menu
 │   ├── GlobalUI.tsx            # Global UI components
 │   └── ui/                     # Reusable UI primitives
 ├── constants/
+│   ├── api.js                  # API configuration (proxy URL)
 │   ├── prompts.ts              # LLM system prompts
 │   └── theme.ts                # Color definitions
 ├── context/

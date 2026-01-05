@@ -1,35 +1,65 @@
-import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Text, 
-  TextInput, 
-  View, 
-  TouchableOpacity, 
-  Modal, 
-  Platform, 
-  KeyboardAvoidingView, 
-  Alert,
-  ScrollView,
-  TouchableWithoutFeedback,
-  Keyboard,
-  Animated,
-  Dimensions,
-  StyleSheet,
-  Easing,
-} from 'react-native';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useRef, useState } from 'react';
+import {
+    Alert,
+    Animated,
+    Dimensions,
+    Easing,
+    Keyboard,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View,
+} from 'react-native';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import FloatingMenu from './components/FloatingMenu';
+import { getApiBaseUrl, isProxyMode, OPENROUTER_URL } from './constants/api';
 import { SYSTEM_PROMPT } from './constants/prompts';
 import { Colors } from './constants/theme';
 import { styles } from './styles';
-import { streamSingleFill, streamResponse, streamDelete } from './utils/animations';
-import FloatingMenu from './components/FloatingMenu';
+import { streamDelete, streamResponse, streamSingleFill } from './utils/animations';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const STORAGE_KEY_API = 'llm_api_key';
 const NOTES_STORAGE_KEY = 'notes_data';
+
+// Helper to make API calls - works with both proxy and direct mode
+const makeApiCall = async (endpoint, body, apiKey) => {
+  const baseUrl = getApiBaseUrl();
+  const usingProxy = isProxyMode();
+  
+  // For proxy mode, we don't need auth headers (proxy handles it)
+  // For direct mode, we need the user's API key
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(usingProxy ? {} : {
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
+      'X-Title': 'Writer App',
+    }),
+  };
+  
+  const url = usingProxy 
+    ? `${baseUrl}${endpoint}` 
+    : `${OPENROUTER_URL}${endpoint}`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  
+  return response.json();
+};
 
 // Extracts string content regardless of OpenRouter payload shape (string or array chunks).
 const coerceMessageContent = (messageContent) => {
@@ -748,26 +778,16 @@ function EditorScreen() {
     if (!apiKey) return;
     
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
-          'X-Title': 'Writer App',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash-lite-preview-09-2025',
-          messages: [
-            { role: 'system', content: "You are a helpful assistant. Summarize the user's text into a short, concise title (3-5 words max). Do not use quotes. IMPORTANT: The title MUST be in the same language as the user's text. If they write in Spanish, title in Spanish. If French, title in French. Match their language exactly." },
-            { role: 'user', content: text.slice(0, 1000) } // Limit context
-          ],
-          temperature: 0.3,
-          max_tokens: 10,
-        }),
-      });
+      const data = await makeApiCall('/chat/completions', {
+        model: 'google/gemini-2.5-flash-lite-preview-09-2025',
+        messages: [
+          { role: 'system', content: "You are a helpful assistant. Summarize the user's text into a short, concise title (3-5 words max). Do not use quotes. IMPORTANT: The title MUST be in the same language as the user's text. If they write in Spanish, title in Spanish. If French, title in French. Match their language exactly." },
+          { role: 'user', content: text.slice(0, 1000) } // Limit context
+        ],
+        temperature: 0.3,
+        max_tokens: 10,
+      }, apiKey);
 
-      const data = await response.json();
       if (data.choices && data.choices.length > 0) {
         const newTitle = data.choices[0].message.content.trim().replace(/^["']|["']$/g, '');
         if (newTitle && newTitle !== title) {
@@ -785,6 +805,12 @@ function EditorScreen() {
 
   const loadSettings = async () => {
     try {
+      // If using proxy mode, validate the proxy instead of requiring user API key
+      if (isProxyMode()) {
+        validateProxyConnection();
+        return;
+      }
+      
       const storedKey = await AsyncStorage.getItem(STORAGE_KEY_API);
       if (storedKey) {
         setApiKey(storedKey);
@@ -795,11 +821,33 @@ function EditorScreen() {
     }
   };
 
+  // Validate proxy backend connection (no API key needed from user)
+  const validateProxyConnection = async () => {
+    setLlmStatus('connecting');
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/validate`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.valid) {
+          setApiKey('proxy'); // Marker that we're using proxy mode
+          setLlmStatus('connected');
+        } else {
+          setLlmStatus('error');
+        }
+      } else {
+        setLlmStatus('error');
+      }
+    } catch (error) {
+      setLlmStatus('error');
+    }
+  };
+
   const validateConnection = async (key) => {
     setLlmStatus('connecting');
     try {
-      // Check OpenRouter models endpoint
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
+      // Use OpenRouter's auth/key endpoint to actually validate the API key
+      const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${key}`,
@@ -807,7 +855,13 @@ function EditorScreen() {
       });
       
       if (response.ok) {
-        setLlmStatus('connected');
+        const data = await response.json();
+        // Check if we got valid key data back (has a label or usage info)
+        if (data && data.data) {
+          setLlmStatus('connected');
+        } else {
+          setLlmStatus('error');
+        }
       } else {
         setLlmStatus('error');
       }
@@ -971,27 +1025,16 @@ function EditorScreen() {
 
         try {
           const startTime = Date.now();
-          const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`,
-              'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
-              'X-Title': 'Writer App',
-            },
-            body: JSON.stringify({
-              model: 'google/gemini-2.5-flash-lite-preview-09-2025',
-              plugins: [{ id: "web", max_results: 3 }],
-              messages: [
-                { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
-                { role: 'user', content: fullContext }
-              ],
-              temperature: 0.2,
-              max_tokens: 64,
-            }),
-          });
-
-          const data = await response.json();
+          const data = await makeApiCall('/chat/completions', {
+            model: 'google/gemini-2.5-flash-lite-preview-09-2025',
+            plugins: [{ id: "web", max_results: 3 }],
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
+              { role: 'user', content: fullContext }
+            ],
+            temperature: 0.2,
+            max_tokens: 64,
+          }, apiKey);
           const latencyMs = Date.now() - startTime;
           
           // Store debug info
@@ -1049,7 +1092,10 @@ function EditorScreen() {
 
   const triggerLLM = async (prefix, suffix) => {
     if (llmStatus !== 'connected') {
-      Alert.alert('LLM API Not Connected', 'Tap the Cloud button in the menu to add your OpenRouter API key.');
+      const message = isProxyMode() 
+        ? 'LLM API Not Connected. The backend service may be unavailable.'
+        : 'LLM API Not Connected. Tap the Cloud button in the menu to add your OpenRouter API key.';
+      Alert.alert('Not Connected', message);
       setText(prefix + '//' + suffix);
       return;
     }
@@ -1067,32 +1113,21 @@ function EditorScreen() {
 
     try {
       const startTime = Date.now();
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
-          'X-Title': 'Writer App',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash-lite-preview-09-2025',
-          plugins: [
-            {
-              id: "web",
-              max_results: 3,
-            }
-          ],
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
-            { role: 'user', content: fullContext }
-          ],
-          temperature: 0.2,
-          max_tokens: 64,
-        }),
-      });
-
-      const data = await response.json();
+      const data = await makeApiCall('/chat/completions', {
+        model: 'google/gemini-2.5-flash-lite-preview-09-2025',
+        plugins: [
+          {
+            id: "web",
+            max_results: 3,
+          }
+        ],
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
+          { role: 'user', content: fullContext }
+        ],
+        temperature: 0.2,
+        max_tokens: 64,
+      }, apiKey);
       const latencyMs = Date.now() - startTime;
 
       // Store debug info
@@ -1605,6 +1640,7 @@ function EditorScreen() {
           noteText={text}
           directAction={showingSavedNotes ? createNewNote : null}
           onNewNote={createNewNote}
+          hideApiButton={isProxyMode()}
         />
 
       </SafeAreaView>

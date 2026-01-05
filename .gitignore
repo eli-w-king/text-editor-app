@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# API config with personal proxy URL
+constants/api.js
+
 # typescript
 *.tsbuildinfo
 

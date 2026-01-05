@@ -18,9 +18,10 @@ interface FloatingMenuProps {
   noteText?: string;
   directAction?: (() => void) | null;
   onNewNote?: (() => void) | null;
+  hideApiButton?: boolean; // Hide API button when using proxy mode
 }
 
-export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel, noteText, directAction, onNewNote }: FloatingMenuProps) {
+export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConnectPress, theme, setTheme, toggleTheme, resetApp, debugData, onNotesPress, notesButtonLabel, noteText, directAction, onNewNote, hideApiButton }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showThemeOptions, setShowThemeOptions] = useState(false);
   const [corner, setCorner] = useState<'bottomLeft' | 'bottomRight'>('bottomLeft');
@@ -207,9 +208,17 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
       }, 200);
   }
 
+  // Calculate menu height based on visible items
+  // Each item is ~70px, plus padding and close button
+  const itemCount = 2 + // Theme + Notes (always visible)
+    (notesButtonLabel !== 'New' && onNewNote ? 1 : 0) + // New button
+    (devModeEnabled ? 1 : 0) + // Debug (only if dev mode)
+    (hideApiButton ? 0 : 1); // API button
+  const openHeight = 60 + (itemCount * 70); // 60 for close button area + items
+
   const baseHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [60, 340],
+    outputRange: [60, openHeight],
   });
   
   const extraHeight = expansionAnim.interpolate({
@@ -329,20 +338,22 @@ export default function FloatingMenu({ debugMode, toggleDebug, llmStatus, onConn
                </TouchableOpacity>
              )}
 
-             {/* API Option */}
-             <TouchableOpacity onPress={onConnectPress} style={styles.optionItem}>
-               <View style={[
-                 styles.iconCircle, 
-                 { borderWidth: StyleSheet.hairlineWidth, borderColor: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }
-               ]}>
-                  <Ionicons 
-                    name={llmStatus === 'connected' ? "cloud-done-outline" : "cloud-offline-outline"} 
-                    size={24} 
-                    color={iconColor} 
-                  />
-               </View>
-               <Text style={[styles.label, { color: labelColor }]}>API</Text>
-             </TouchableOpacity>
+             {/* API Option - hidden in proxy mode */}
+             {!hideApiButton && (
+               <TouchableOpacity onPress={onConnectPress} style={styles.optionItem}>
+                 <View style={[
+                   styles.iconCircle, 
+                   { borderWidth: StyleSheet.hairlineWidth, borderColor: theme === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }
+                 ]}>
+                    <Ionicons 
+                      name={llmStatus === 'connected' ? "cloud-done-outline" : "cloud-offline-outline"} 
+                      size={24} 
+                      color={iconColor} 
+                    />
+                 </View>
+                 <Text style={[styles.label, { color: labelColor }]}>API</Text>
+               </TouchableOpacity>
+             )}
 
              {/* Notes Option */}
              {onNotesPress && (
