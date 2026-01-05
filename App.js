@@ -169,6 +169,9 @@ function EditorScreen() {
   const [theme, setTheme] = useState('light');
   const [currentDate, setCurrentDate] = useState(new Date());
   
+  // Animated notes page title
+  const [notesPageTitle, setNotesPageTitle] = useState('0 Notes');
+  
   // Saved notes state
   const [notes, setNotes] = useState([]);
   const [currentNoteId, setCurrentNoteId] = useState(null);
@@ -455,6 +458,74 @@ function EditorScreen() {
   useEffect(() => {
     currentNoteIdRef.current = currentNoteId;
   }, [currentNoteId]);
+
+  // Animated notes page title - animates when opening saved notes
+  const notesAnimating = useRef(false);
+  const notesAnimationTimeout = useRef(null);
+  
+  const getNotesCountTitle = () => `${notes.length} ${notes.length === 1 ? 'Note' : 'Notes'}`;
+  
+  const animateNotesTitle = async (from, to) => {
+    if (notesAnimating.current) return;
+    notesAnimating.current = true;
+    
+    // Delete current title character by character
+    for (let i = from.length; i >= 0; i--) {
+      setNotesPageTitle(from.slice(0, i));
+      await new Promise(r => setTimeout(r, 50));
+    }
+    
+    // Small pause
+    await new Promise(r => setTimeout(r, 200));
+    
+    // Type new title character by character
+    for (let i = 0; i <= to.length; i++) {
+      setNotesPageTitle(to.slice(0, i));
+      await new Promise(r => setTimeout(r, 80));
+    }
+    
+    notesAnimating.current = false;
+  };
+  
+  const handleNotesTitleTap = async () => {
+    if (notesAnimating.current) return;
+    
+    // Clear any pending auto-return timeout
+    if (notesAnimationTimeout.current) {
+      clearTimeout(notesAnimationTimeout.current);
+    }
+    
+    const countTitle = getNotesCountTitle();
+    
+    if (notesPageTitle === '//') {
+      // Show count, then return to // after 3 seconds
+      await animateNotesTitle('//', countTitle);
+      notesAnimationTimeout.current = setTimeout(async () => {
+        await animateNotesTitle(getNotesCountTitle(), '//');
+      }, 3000);
+    } else {
+      // Go to //
+      await animateNotesTitle(notesPageTitle, '//');
+    }
+  };
+  
+  useEffect(() => {
+    if (!showingSavedNotes) {
+      // Reset when closing
+      setNotesPageTitle(getNotesCountTitle());
+      if (notesAnimationTimeout.current) {
+        clearTimeout(notesAnimationTimeout.current);
+      }
+      return;
+    }
+    
+    // Start animation after 2 seconds of opening
+    const timeout = setTimeout(async () => {
+      await animateNotesTitle(getNotesCountTitle(), '//');
+    }, 2000);
+    
+    return () => clearTimeout(timeout);
+  }, [showingSavedNotes, notes.length]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
@@ -1345,14 +1416,92 @@ function EditorScreen() {
             style={StyleSheet.absoluteFill}
           />
           <SafeAreaView style={{ flex: 1 }}>
+            {/* Fixed header with tiered blur - matches collapsed note title style */}
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                left: 0,
+                zIndex: 100,
+              }}
+              pointerEvents="box-none"
+            >
+              {/* Tiered blur background */}
+              <View
+                style={{
+                  position: 'absolute',
+                  top: -50,
+                  left: 0,
+                  right: 0,
+                  height: 190,
+                }}
+              >
+                <BlurView
+                  intensity={30}
+                  tint={theme === 'light' ? 'light' : 'dark'}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 130 }}
+                />
+                <BlurView
+                  intensity={25}
+                  tint={theme === 'light' ? 'light' : 'dark'}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 140 }}
+                />
+                <BlurView
+                  intensity={20}
+                  tint={theme === 'light' ? 'light' : 'dark'}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 150 }}
+                />
+                <BlurView
+                  intensity={15}
+                  tint={theme === 'light' ? 'light' : 'dark'}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 160 }}
+                />
+                <BlurView
+                  intensity={10}
+                  tint={theme === 'light' ? 'light' : 'dark'}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 170 }}
+                />
+                <BlurView
+                  intensity={5}
+                  tint={theme === 'light' ? 'light' : 'dark'}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 180 }}
+                />
+                <BlurView
+                  intensity={2}
+                  tint={theme === 'light' ? 'light' : 'dark'}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 190 }}
+                />
+              </View>
+              
+              {/* Small title - tappable */}
+              <TouchableOpacity 
+                onPress={handleNotesTitleTap}
+                activeOpacity={0.7}
+                style={{
+                  paddingHorizontal: 20,
+                  paddingTop: 100,
+                  paddingBottom: 4,
+                }}
+              >
+                <Text 
+                  style={{ 
+                    color: Colors[theme].text,
+                    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+                    fontSize: 22,
+                    fontWeight: '400',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {notesPageTitle}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <ScrollView 
               style={savedNotesOverlayStyles.notesList}
-              contentContainerStyle={[savedNotesOverlayStyles.notesListContent, { paddingTop: '15%' }]}
+              contentContainerStyle={[savedNotesOverlayStyles.notesListContent, { paddingTop: 146 }]}
             >
-              {/* Header */}
-              <Text style={[styles.headerTitle, { color: Colors[theme].text, marginBottom: 24, paddingHorizontal: 0 }]}>
-                Notes
-              </Text>
 
             {savedNotes.length === 0 ? (
               <View style={savedNotesOverlayStyles.emptyState}>
@@ -1368,7 +1517,7 @@ function EditorScreen() {
                     style={{ 
                       paddingVertical: 16,
                       borderBottomWidth: StyleSheet.hairlineWidth,
-                      borderBottomColor: 'rgba(255,255,255,0.2)',
+                      borderBottomColor: theme === 'light' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.2)',
                     }}
                     onPress={() => openNote(note)}
                   >
