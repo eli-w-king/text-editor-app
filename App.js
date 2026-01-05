@@ -199,6 +199,38 @@ function EditorScreen() {
   const [theme, setTheme] = useState('light');
   const [currentDate, setCurrentDate] = useState(new Date());
   
+  // Thinking animation state
+  const [isThinking, setIsThinking] = useState(false);
+  
+  // Update text with animated placeholder while thinking
+  const [thinkingPrefix, setThinkingPrefix] = useState('');
+  const [thinkingSuffix, setThinkingSuffix] = useState('');
+  
+  useEffect(() => {
+    if (!isThinking) return;
+    
+    // Fluid wave - 2 braille dots with smooth height transitions
+    // ⠁ = top, ⠂ = mid, ⠄ = bottom
+    const waveFrames = [
+      '⠁⠄',
+      '⠁⠂',
+      '⠂⠁',
+      '⠄⠁',
+      '⠄⠂',
+      '⠂⠄',
+    ];
+    let frameIndex = 0;
+    
+    const updatePlaceholder = () => {
+      setText(thinkingPrefix + waveFrames[frameIndex] + thinkingSuffix);
+      frameIndex = (frameIndex + 1) % waveFrames.length;
+    };
+    
+    updatePlaceholder();
+    const interval = setInterval(updatePlaceholder, 100);
+    return () => clearInterval(interval);
+  }, [isThinking, thinkingPrefix, thinkingSuffix]);
+  
   // Animated notes page title
   const [notesPageTitle, setNotesPageTitle] = useState('0 Notes');
   
@@ -1010,10 +1042,12 @@ function EditorScreen() {
         const beforeSlash = currentSegment.slice(0, slashIndex);
         const afterSlash = currentSegment.slice(slashIndex + 1);
         
-        // Show loading placeholder
+        // Start animated thinking indicator
         const beforeAnim = isPrefix ? beforeSlash : otherSegmentDisplay + beforeSlash;
         const afterAnim = isPrefix ? afterSlash + otherSegmentDisplay : afterSlash;
-        setText(beforeAnim + '…' + afterAnim);
+        setThinkingPrefix(beforeAnim);
+        setThinkingSuffix(afterAnim);
+        setIsThinking(true);
         
         // Build context: replace ONLY THIS / with [CURSOR], keep other / as is
         const cursorMarker = '[CURSOR]';
@@ -1036,6 +1070,9 @@ function EditorScreen() {
             max_tokens: 64,
           }, apiKey);
           const latencyMs = Date.now() - startTime;
+          
+          // Stop thinking animation
+          setIsThinking(false);
           
           // Store debug info
           setDebugData({
@@ -1072,6 +1109,7 @@ function EditorScreen() {
 
         } catch (error) {
           console.error('Batch fill error:', error);
+          setIsThinking(false);
           currentSegment = beforeSlash + afterSlash;
           setText(isPrefix ? currentSegment + otherSegmentDisplay : otherSegmentDisplay + currentSegment);
           break;
@@ -1100,9 +1138,10 @@ function EditorScreen() {
       return;
     }
 
-    // Use a distinct placeholder character (Ellipsis) to avoid replacing wrong text
-    const placeholder = '…'; 
-    setText(prefix + placeholder + suffix);
+    // Start animated thinking indicator
+    setThinkingPrefix(prefix);
+    setThinkingSuffix(suffix);
+    setIsThinking(true);
 
     // Build full context with cursor marker so model understands insertion point
     const cursorMarker = '[CURSOR]';
@@ -1129,6 +1168,9 @@ function EditorScreen() {
         max_tokens: 64,
       }, apiKey);
       const latencyMs = Date.now() - startTime;
+      
+      // Stop thinking animation
+      setIsThinking(false);
 
       // Store debug info
       setDebugData({
@@ -1144,7 +1186,7 @@ function EditorScreen() {
         let cleanedContent = sanitizeModelContent(rawContent);
 
         if (!cleanedContent) {
-          setText(prev => prev.replace(placeholder, ''));
+          setText(prefix + suffix);
           return;
         }
 
@@ -1155,16 +1197,21 @@ function EditorScreen() {
         const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || cleanedContent.length / 4;
         addColorDot(latencyMs, tokensUsed);
 
+        // Set up for streaming: add placeholder marker first
+        const placeholder = '…';
+        setText(prefix + placeholder + suffix);
+        
         // Start streaming effect
-              await streamResponse(setText, cleanedContent, placeholder);
+        await streamResponse(setText, cleanedContent, placeholder);
       } else {
         // Fail silently for better UX
-        setText(prev => prev.replace(placeholder, ''));
+        setText(prefix + suffix);
       }
 
     } catch (error) {
-      // Fail silently for better UX
-      setText(prev => prev.replace(placeholder, ''));
+      // Stop thinking animation and fail silently
+      setIsThinking(false);
+      setText(prefix + suffix);
     }
   };
 
