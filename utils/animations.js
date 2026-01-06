@@ -32,6 +32,87 @@ export const streamSingleFill = (setText, before, content, after, options = {}) 
 };
 
 /**
+ * Stream multiple fills simultaneously - all placeholders animate at once
+ * @param {Function} setText - State setter for the text
+ * @param {Array<{before: string, content: string, after: string}>} segments - Ordered segments with fills
+ * @param {Object} options - Animation options
+ * @returns {Promise} Resolves when animation completes
+ */
+export const streamParallelFills = (setText, segments, options = {}) => {
+  const { chunkSize = 1, speed = 40 } = options;
+  
+  return new Promise((resolve) => {
+    // Track progress for each content piece
+    const progress = segments.map(() => 0);
+    const maxLength = Math.max(...segments.map(s => s.content.length));
+    
+    if (maxLength === 0) {
+      // No content to stream, just join segments
+      const finalText = segments.map((s, i) => 
+        (i === 0 ? s.before : '') + s.content + (i === segments.length - 1 ? s.after : '')
+      ).join('');
+      setText(finalText);
+      resolve();
+      return;
+    }
+
+    const marker = '\u200B'; // Zero-width space as cursor marker
+
+    const interval = setInterval(() => {
+      // Check if all segments are complete
+      const allDone = progress.every((p, i) => p >= segments[i].content.length);
+      
+      if (allDone) {
+        clearInterval(interval);
+        // Build final text without markers
+        let finalText = '';
+        for (let i = 0; i < segments.length; i++) {
+          if (i === 0) finalText += segments[i].before;
+          finalText += segments[i].content;
+          if (i < segments.length - 1) {
+            // Add inter-segment text (the "after" of current becomes visible)
+            finalText += segments[i].after;
+          } else {
+            finalText += segments[i].after;
+          }
+        }
+        setText(finalText);
+        resolve();
+        return;
+      }
+
+      // Build current text with all partial contents + markers
+      let currentText = '';
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (i === 0) currentText += seg.before;
+        
+        const partial = seg.content.slice(0, progress[i] + chunkSize);
+        const stillStreaming = progress[i] < seg.content.length;
+        
+        currentText += partial;
+        if (stillStreaming) currentText += marker;
+        
+        // Add inter-segment separator or final after
+        if (i < segments.length - 1) {
+          currentText += seg.after;
+        } else {
+          currentText += seg.after;
+        }
+        
+        // Advance progress
+        if (progress[i] < seg.content.length) {
+          progress[i] = Math.min(progress[i] + chunkSize, seg.content.length);
+        }
+      }
+      
+      // Remove markers for cleaner display
+      setText(currentText.replace(new RegExp(marker, 'g'), ''));
+    }, speed);
+  });
+};
+
+/**
  * Stream response with placeholder replacement
  * @param {Function} setText - State setter for the text
  * @param {string} fullContent - Full content to stream

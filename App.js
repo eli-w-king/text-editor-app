@@ -23,7 +23,7 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import FloatingMenu from './components/FloatingMenu';
 import { getApiBaseUrl, isProxyMode, OPENROUTER_URL } from './constants/api';
-import { SYSTEM_PROMPT } from './constants/prompts';
+import { SYSTEM_PROMPT, BATCH_FILL_PROMPT } from './constants/prompts';
 import { Colors } from './constants/theme';
 import { styles } from './styles';
 import { streamDelete, streamResponse, streamSingleFill } from './utils/animations';
@@ -100,6 +100,25 @@ const sanitizeModelContent = (rawInput) => {
 
   let cleaned = rawInput;
 
+  // Remove common explanation prefixes - be aggressive
+  cleaned = cleaned
+    .replace(/^\s*(?:according to|based on|from|per|via|as per|the answer is|it is|this is|that is|it's|that's|here is|here's|the)[,:\s]*/gi, '')
+    .replace(/^\s*(?:search results?|sources?|web search|results? show|i found|looking up)[,:\s]*/gi, '')
+    .replace(/^\s*(?:the (?:acts?|artists?|bands?|members?|names?|answer) (?:under|include|is|are|would be))[,:\s]*/gi, '')
+    .replace(/[:,]\s*\d+\s*$/g, '') // Remove trailing ": 3" type artifacts
+    .replace(/^[\s:,.-]+/, '') // Remove leading punctuation
+    .replace(/[\s:,.]+$/, ''); // Remove trailing punctuation
+  
+  // If it still starts with explanation-like text after a comma, take only what's after
+  if (/^[^,]+,\s*(?:the|according|based|include|are|is)/i.test(cleaned)) {
+    // This looks like "Something, the acts include X" - probably bad output
+    // Try to extract just the useful part or return empty
+    const match = cleaned.match(/(?:include|are|is)\s+(.+)/i);
+    if (match) {
+      cleaned = match[1].trim();
+    }
+  }
+
   // Remove ALL brackets that look like citations (contain TLDs, URLs, or domain-like text).
   // Catches [theblock.co], [example.com/path], [1], [Source: ...], etc.
   cleaned = cleaned
@@ -148,33 +167,38 @@ const sanitizeModelContent = (rawInput) => {
 
 // Ensures proper spacing around filled content so words don't mash together
 const ensureSpacing = (prefix, content, suffix) => {
-  let spacedContent = content;
+  let spacedContent = content.trim();
   
-  // Check if we need a space before the content
-  if (prefix.length > 0) {
-    const lastPrefixChar = prefix[prefix.length - 1];
-    const firstContentChar = content[0];
-    // Add space if prefix doesn't end with space/newline/punctuation and content doesn't start with space/punctuation
-    const needsSpaceBefore = !/[\s\n.,!?;:'"\-—–()[\]{}]$/.test(lastPrefixChar) && 
-                             !/^[\s.,!?;:'"\-—–()[\]{}]/.test(firstContentChar);
-    if (needsSpaceBefore) {
+  // Trim trailing space from prefix and leading space from suffix
+  // We'll add our own consistent spacing
+  const trimmedPrefix = prefix.replace(/\s+$/, '');
+  const trimmedSuffix = suffix.replace(/^\s+/, '');
+  
+  // Always add space before content if prefix exists and doesn't end with newline or opening bracket
+  if (trimmedPrefix.length > 0) {
+    const lastChar = trimmedPrefix[trimmedPrefix.length - 1];
+    if (!/[\n([{]/.test(lastChar)) {
       spacedContent = ' ' + spacedContent;
     }
   }
   
-  // Check if we need a space after the content
-  if (suffix.length > 0) {
-    const lastContentChar = spacedContent[spacedContent.length - 1];
-    const firstSuffixChar = suffix[0];
-    // Add space if content doesn't end with space/punctuation and suffix doesn't start with space/punctuation
-    const needsSpaceAfter = !/[\s\n.,!?;:'"\-—–()[\]{}]$/.test(lastContentChar) && 
-                            !/^[\s\n.,!?;:'"\-—–()[\]{}]/.test(firstSuffixChar);
-    if (needsSpaceAfter) {
+  // Always add space after content if suffix exists and doesn't start with punctuation or newline
+  if (trimmedSuffix.length > 0) {
+    const firstChar = trimmedSuffix[0];
+    if (!/^[\n.,!?;:'"\-—–)\]}]/.test(firstChar)) {
       spacedContent = spacedContent + ' ';
     }
   }
   
   return spacedContent;
+};
+
+// Helper to rebuild text with trimmed prefix/suffix for consistent spacing
+const rebuildWithSpacing = (prefix, content, suffix) => {
+  const trimmedPrefix = prefix.replace(/\s+$/, '');
+  const trimmedSuffix = suffix.replace(/^\s+/, '');
+  const spacedContent = ensureSpacing(prefix, content, suffix);
+  return { prefix: trimmedPrefix, content: spacedContent, suffix: trimmedSuffix };
 };
 
 export default function App() {
@@ -206,6 +230,10 @@ function EditorScreen() {
   const [thinkingPrefix, setThinkingPrefix] = useState('');
   const [thinkingSuffix, setThinkingSuffix] = useState('');
   
+  // For multi-position thinking animation (batch fill with multiple /)
+  const [thinkingPositions, setThinkingPositions] = useState([]); // Array of positions to animate
+  const [thinkingBaseText, setThinkingBaseText] = useState(''); // Original text with / removed
+  
   useEffect(() => {
     if (!isThinking) return;
     
@@ -222,14 +250,29 @@ function EditorScreen() {
     let frameIndex = 0;
     
     const updatePlaceholder = () => {
-      setText(thinkingPrefix + waveFrames[frameIndex] + thinkingSuffix);
+      if (thinkingPositions.length > 0 && thinkingBaseText) {
+        // Multi-position animation: insert wave frames at each position
+        let result = '';
+        let lastPos = 0;
+        for (let i = 0; i < thinkingPositions.length; i++) {
+          const pos = thinkingPositions[i];
+          result += thinkingBaseText.slice(lastPos, pos);
+          result += waveFrames[frameIndex];
+          lastPos = pos;
+        }
+        result += thinkingBaseText.slice(lastPos);
+        setText(result);
+      } else {
+        // Single position animation (original behavior)
+        setText(thinkingPrefix + waveFrames[frameIndex] + thinkingSuffix);
+      }
       frameIndex = (frameIndex + 1) % waveFrames.length;
     };
     
     updatePlaceholder();
     const interval = setInterval(updatePlaceholder, 100);
     return () => clearInterval(interval);
-  }, [isThinking, thinkingPrefix, thinkingSuffix]);
+  }, [isThinking, thinkingPrefix, thinkingSuffix, thinkingPositions, thinkingBaseText]);
   
   // Animated notes page title
   const [notesPageTitle, setNotesPageTitle] = useState('0 Notes');
@@ -954,14 +997,14 @@ function EditorScreen() {
   };
 
   const handleTextChange = (newText) => {
-    // Check for // trigger (batch fill after punctuation/newline, or inline fill mid-sentence)
+    // Check for // trigger (double slash to fill all blanks)
     const doubleTriggerRegex = /(?<!:)\/\//;
     const doubleMatch = newText.match(doubleTriggerRegex);
 
     if (doubleMatch) {
-       const index = doubleMatch.index;
-       const prefix = newText.slice(0, index);
-       const suffix = newText.slice(index + 2);
+      const index = doubleMatch.index;
+      const prefix = newText.slice(0, index);
+      const suffix = newText.slice(index + 2);
 
       // Easter egg: if editor is effectively empty, show Boing boing!
       if (prefix.trim() === '') {
@@ -979,156 +1022,206 @@ function EditorScreen() {
         });
         return;
       }
-       
-       // Determine if this is a "batch fill" trigger (// after punctuation or on new line)
-       // vs an inline trigger (// in middle of sentence)
-       const trimmedPrefix = prefix.trimEnd();
-       const endsWithPunctuation = /[.!?]$/.test(trimmedPrefix);
-       const endsWithNewline = prefix.endsWith('\n') || prefix.trimEnd() === '';
-       const hasPendingPlaceholders = findSingleSlash(prefix) !== -1;
-       const isBatchFill = endsWithPunctuation || endsWithNewline || hasPendingPlaceholders;
-       
-       if (isBatchFill) {
-         // Batch fill: find all / placeholders and fill them one by one
-         triggerBatchFill(prefix, suffix);
-       } else {
-         // Inline trigger: immediate fill at cursor
-         triggerLLM(prefix, suffix);
-       }
+
+      // Combine prefix + suffix to check for all / placeholders
+      const fullText = prefix + suffix;
+      const slashPositions = findAllSlashPlaceholders(fullText);
+      
+      // The // position itself is also a fill position (at prefix.length in fullText)
+      // Add it to the list of positions to fill
+      const doubleTriggerPos = prefix.length;
+      const allFillPositions = [...slashPositions, doubleTriggerPos].sort((a, b) => a - b);
+      
+      // Always use batch fill - it handles all positions including the //
+      triggerBatchFill(fullText, allFillPositions);
     } else {
-       setText(newText);
+      setText(newText);
     }
   };
 
-  // Find standalone / placeholder: space before, space/punctuation after, not part of URL
-  const findSingleSlash = (text) => {
+  // Find all standalone / placeholders: preceded by space/start, not part of // or ://
+  const findAllSlashPlaceholders = (text) => {
+    const positions = [];
     for (let i = 0; i < text.length; i++) {
       if (text[i] === '/') {
-        // Check it's not part of // or ://
         const prevChar = i > 0 ? text[i - 1] : ' ';
         const nextChar = i < text.length - 1 ? text[i + 1] : ' ';
         
-        // Must be: space before (or start), and not followed by /
-        // Also not preceded by : (URL)
+        // Must not be part of // or ://
         if (prevChar !== ':' && prevChar !== '/' && nextChar !== '/') {
-          // Check prev is space-like or start
+          // Must have space-like character before (or be at start)
           if (prevChar === ' ' || prevChar === '\n' || prevChar === '\t' || i === 0) {
-            return i;
+            positions.push(i);
           }
         }
       }
     }
-    return -1;
+    return positions;
   };
 
-  // Batch fill: process each standalone / one at a time, sequentially
-  const triggerBatchFill = async (prefix, suffix) => {
+  // Batch fill: process all fill positions (/ and //) with a single API call
+  const triggerBatchFill = async (fullText, fillPositions) => {
     if (llmStatus !== 'connected') {
       Alert.alert('LLM API Not Connected', 'Tap the Cloud button in the menu to add your OpenRouter API key.');
-      setText(prefix + '//' + suffix);
+      setText(fullText);
       return;
     }
 
-    let currentPrefix = prefix;
-    let currentSuffix = suffix;
+    // Build text with numbered [FILL_N] markers for each position
+    let markedText = '';
+    let lastPos = 0;
+    for (let i = 0; i < fillPositions.length; i++) {
+      const pos = fillPositions[i];
+      markedText += fullText.slice(lastPos, pos);
+      markedText += `[FILL_${i + 1}]`;
+      lastPos = pos + 1; // Skip the / (or first char of //)
+    }
+    markedText += fullText.slice(lastPos);
 
-    const processSegment = async (segment, otherSegmentContext, otherSegmentDisplay, isPrefix) => {
-      let currentSegment = segment;
+    // Build base text - just remove the / characters, keep spacing natural
+    // The wave animation will appear where the / was
+    let baseText = '';
+    lastPos = 0;
+    const animPositions = [];
+    for (let i = 0; i < fillPositions.length; i++) {
+      const pos = fillPositions[i];
+      // Get text before this position (keep spacing intact)
+      baseText += fullText.slice(lastPos, pos);
+      animPositions.push(baseText.length);
+      // Skip just the / character
+      lastPos = pos + 1;
+    }
+    // Add remaining text
+    baseText += fullText.slice(lastPos);
+
+    // Start multi-position thinking animation
+    setThinkingBaseText(baseText);
+    setThinkingPositions(animPositions);
+    setIsThinking(true);
+
+    const today = new Date().toDateString();
+    const startTime = Date.now();
+
+    try {
+      const data = await makeApiCall('/chat/completions', {
+        model: 'anthropic/claude-haiku-4.5',
+        plugins: [{ id: 'web', max_results: 3 }],
+        messages: [
+          { role: 'system', content: BATCH_FILL_PROMPT + `\nToday's date is ${today}.` },
+          { role: 'user', content: markedText }
+        ],
+        temperature: 0.1,
+        max_tokens: 256,
+      }, apiKey);
+
+      const latencyMs = Date.now() - startTime;
       
-      while (true) {
-        const slashIndex = findSingleSlash(currentSegment);
-        if (slashIndex === -1) break;
-        
-        const beforeSlash = currentSegment.slice(0, slashIndex);
-        const afterSlash = currentSegment.slice(slashIndex + 1);
-        
-        // Start animated thinking indicator
-        const beforeAnim = isPrefix ? beforeSlash : otherSegmentDisplay + beforeSlash;
-        const afterAnim = isPrefix ? afterSlash + otherSegmentDisplay : afterSlash;
-        setThinkingPrefix(beforeAnim);
-        setThinkingSuffix(afterAnim);
-        setIsThinking(true);
-        
-        // Build context: replace ONLY THIS / with [CURSOR], keep other / as is
-        const cursorMarker = '[CURSOR]';
-        const fullContext = isPrefix 
-          ? beforeSlash + cursorMarker + afterSlash + otherSegmentContext
-          : otherSegmentContext + beforeSlash + cursorMarker + afterSlash;
-          
-        const today = new Date().toDateString();
+      // Debug logging
+      console.log('Batch fill API response:', JSON.stringify(data, null, 2));
 
+      // Stop thinking animation
+      setIsThinking(false);
+      setThinkingPositions([]);
+      setThinkingBaseText('');
+
+      if (data.choices && data.choices.length > 0) {
+        const rawContent = coerceMessageContent(data.choices[0].message.content);
+        console.log('Batch fill raw content:', rawContent);
+        
+        // Parse JSON array response
+        let answers = [];
         try {
-          const startTime = Date.now();
-          const data = await makeApiCall('/chat/completions', {
-            model: 'google/gemini-2.5-flash-lite-preview-09-2025',
-            plugins: [{ id: "web", max_results: 3 }],
-            messages: [
-              { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
-              { role: 'user', content: fullContext }
-            ],
-            temperature: 0.2,
-            max_tokens: 64,
-          }, apiKey);
-          const latencyMs = Date.now() - startTime;
-          
-          // Stop thinking animation
-          setIsThinking(false);
-          
-          // Store debug info
-          setDebugData({
-            sentMessages: [
-              { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
-              { role: 'user', content: fullContext }
-            ],
-            rawResponse: data
-          });
-          
-          let filledContent = '';
-          if (data.choices && data.choices.length > 0) {
-            const rawContent = coerceMessageContent(data.choices[0].message.content);
-            filledContent = sanitizeModelContent(rawContent);
-            
-            // Ensure proper spacing so words don't mash together
-            filledContent = ensureSpacing(beforeSlash, filledContent, afterSlash);
-            
-            // Add color dot - size from latency, color from tokens
-            const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || filledContent.length / 4;
-            addColorDot(latencyMs, tokensUsed);
+          // Try to extract JSON array from response
+          const jsonMatch = rawContent.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            answers = JSON.parse(jsonMatch[0]);
           }
-          
-          if (filledContent) {
-            // Stream this answer in
-            await streamSingleFill(setText, beforeAnim, filledContent, afterAnim);
-            // Update currentText with the filled answer for next iteration
-            currentSegment = beforeSlash + filledContent + afterSlash;
-          } else {
-            // No result, just remove the /
-            currentSegment = beforeSlash + afterSlash;
-            setText(isPrefix ? currentSegment + otherSegmentDisplay : otherSegmentDisplay + currentSegment);
-          }
-
-        } catch (error) {
-          console.error('Batch fill error:', error);
-          setIsThinking(false);
-          currentSegment = beforeSlash + afterSlash;
-          setText(isPrefix ? currentSegment + otherSegmentDisplay : otherSegmentDisplay + currentSegment);
-          break;
+        } catch (parseError) {
+          console.error('Failed to parse batch response:', parseError);
+          // Fallback: split by common delimiters
+          answers = rawContent.split(/[,\n]/).map(s => s.replace(/["'\[\]]/g, '').trim()).filter(Boolean);
         }
-      }
-      return currentSegment;
-    };
 
-    // Process prefix then suffix
-    // We use '…' as a visual placeholder for the pending // trigger
-    const separator = '…';
-    currentPrefix = await processSegment(currentPrefix, currentSuffix, separator + currentSuffix, true);
-    currentSuffix = await processSegment(currentSuffix, currentPrefix, currentPrefix + separator, false);
-    
-    // Finally, trigger immediate fill at the junction
-    triggerLLM(currentPrefix, currentSuffix);
+        // Ensure we have the right number of answers
+        while (answers.length < fillPositions.length) {
+          answers.push('');
+        }
+
+        // Sanitize each answer
+        answers = answers.map(a => sanitizeModelContent(String(a)));
+
+        // Add color dot for the batch fill
+        const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || rawContent.length / 4;
+        addColorDot(latencyMs, tokensUsed);
+
+        // Animate each fill sequentially
+        await animateBatchFills(baseText, animPositions, answers);
+      } else {
+        // Failed - just show text without slashes
+        setText(baseText);
+      }
+    } catch (error) {
+      console.error('Batch fill error:', error);
+      setIsThinking(false);
+      setThinkingPositions([]);
+      setThinkingBaseText('');
+      setText(baseText);
+    }
   };
 
-  const triggerLLM = async (prefix, suffix) => {
+  // Animate batch fills one by one with typing animation
+  // Returns the final filled text
+  const animateBatchFills = async (baseText, positions, answers) => {
+    let currentText = baseText;
+    
+    // Process each fill, tracking cumulative offset
+    let cumulativeOffset = 0;
+    
+    for (let i = 0; i < positions.length; i++) {
+      const answer = answers[i];
+      if (!answer) continue;
+      
+      // Calculate current insert position with offset
+      const insertPos = positions[i] + cumulativeOffset;
+      const rawBefore = currentText.slice(0, insertPos);
+      const rawAfter = currentText.slice(insertPos);
+      
+      // Trim whitespace and add consistent spacing
+      const trimmedBefore = rawBefore.replace(/\s+$/, '');
+      const trimmedAfter = rawAfter.replace(/^\s+/, '');
+      
+      // Build spaced answer
+      let spacedAnswer = answer.trim();
+      
+      // Add space before if needed
+      if (trimmedBefore.length > 0 && !/[\n([{]$/.test(trimmedBefore)) {
+        spacedAnswer = ' ' + spacedAnswer;
+      }
+      
+      // Add space after if needed  
+      if (trimmedAfter.length > 0 && !/^[\n.,!?;:'"\-—–)\]}]/.test(trimmedAfter)) {
+        spacedAnswer = spacedAnswer + ' ';
+      }
+      
+      // Animate this fill
+      await streamSingleFill(setText, trimmedBefore, spacedAnswer, trimmedAfter, { speed: 30 });
+      
+      // Update currentText
+      currentText = trimmedBefore + spacedAnswer + trimmedAfter;
+      
+      // Update cumulative offset for next iteration
+      // Original: we had some chars at position, now we have spacedAnswer there
+      // The difference affects all subsequent positions
+      const originalLength = rawBefore.length + rawAfter.length;
+      const newLength = currentText.length;
+      cumulativeOffset = newLength - baseText.length;
+    }
+    
+    return currentText;
+  };
+
+  // Inline fill at // position (no / placeholders, just generate continuation)
+  const triggerInlineFill = async (prefix, suffix) => {
     if (llmStatus !== 'connected') {
       const message = isProxyMode() 
         ? 'LLM API Not Connected. The backend service may be unavailable.'
@@ -1143,25 +1236,19 @@ function EditorScreen() {
     setThinkingSuffix(suffix);
     setIsThinking(true);
 
-    // Build full context with cursor marker so model understands insertion point
-    const cursorMarker = '[CURSOR]';
+    // Build context with [FILL] marker
     const limitedPrefix = prefix.slice(-1500);
     const limitedSuffix = suffix.slice(0, 500);
-    const fullContext = limitedPrefix + cursorMarker + limitedSuffix;
+    const fullContext = limitedPrefix + '[FILL]' + limitedSuffix;
     const today = new Date().toDateString();
 
     try {
       const startTime = Date.now();
       const data = await makeApiCall('/chat/completions', {
-        model: 'google/gemini-2.5-flash-lite-preview-09-2025',
-        plugins: [
-          {
-            id: "web",
-            max_results: 3,
-          }
-        ],
+        model: 'anthropic/claude-haiku-4.5',
+        plugins: [{ id: 'web', max_results: 3 }],
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
+          { role: 'system', content: SYSTEM_PROMPT + `\nToday's date is ${today}.` },
           { role: 'user', content: fullContext }
         ],
         temperature: 0.2,
@@ -1169,13 +1256,16 @@ function EditorScreen() {
       }, apiKey);
       const latencyMs = Date.now() - startTime;
       
+      // Debug logging
+      console.log('Inline fill API response:', JSON.stringify(data, null, 2));
+      
       // Stop thinking animation
       setIsThinking(false);
 
       // Store debug info
       setDebugData({
         sentMessages: [
-          { role: 'system', content: SYSTEM_PROMPT + ` Today's date is ${today}.` },
+          { role: 'system', content: SYSTEM_PROMPT + `\nToday's date is ${today}.` },
           { role: 'user', content: fullContext }
         ],
         rawResponse: data
@@ -1183,6 +1273,7 @@ function EditorScreen() {
       
       if (data.choices && data.choices.length > 0) {
         const rawContent = coerceMessageContent(data.choices[0].message.content);
+        console.log('Inline fill raw content:', rawContent);
         let cleanedContent = sanitizeModelContent(rawContent);
 
         if (!cleanedContent) {
@@ -1190,26 +1281,33 @@ function EditorScreen() {
           return;
         }
 
-        // Ensure proper spacing so words don't mash together
-        cleanedContent = ensureSpacing(prefix, cleanedContent, suffix);
+        // Trim whitespace and add consistent spacing
+        const trimmedPrefix = prefix.replace(/\s+$/, '');
+        const trimmedSuffix = suffix.replace(/^\s+/, '');
+        
+        let spacedContent = cleanedContent.trim();
+        
+        // Add space before if needed
+        if (trimmedPrefix.length > 0 && !/[\n([{]$/.test(trimmedPrefix)) {
+          spacedContent = ' ' + spacedContent;
+        }
+        
+        // Add space after if needed  
+        if (trimmedSuffix.length > 0 && !/^[\n.,!?;:'"\-—–)\]}]/.test(trimmedSuffix)) {
+          spacedContent = spacedContent + ' ';
+        }
 
-        // Add color dot - size from latency, color from tokens
-        const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || cleanedContent.length / 4;
+        // Add color dot
+        const tokensUsed = data.usage?.completion_tokens || data.usage?.total_tokens || spacedContent.length / 4;
         addColorDot(latencyMs, tokensUsed);
 
-        // Set up for streaming: add placeholder marker first
-        const placeholder = '…';
-        setText(prefix + placeholder + suffix);
-        
-        // Start streaming effect
-        await streamResponse(setText, cleanedContent, placeholder);
+        // Animate the fill with typing effect
+        await streamSingleFill(setText, trimmedPrefix, spacedContent, trimmedSuffix, { speed: 30 });
       } else {
-        // Fail silently for better UX
         setText(prefix + suffix);
       }
 
     } catch (error) {
-      // Stop thinking animation and fail silently
       setIsThinking(false);
       setText(prefix + suffix);
     }
