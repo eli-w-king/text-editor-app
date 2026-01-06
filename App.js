@@ -23,10 +23,10 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import FloatingMenu from './components/FloatingMenu';
 import { getApiBaseUrl, isProxyMode, OPENROUTER_URL } from './constants/api';
-import { SYSTEM_PROMPT, BATCH_FILL_PROMPT } from './constants/prompts';
+import { BATCH_FILL_PROMPT, SYSTEM_PROMPT } from './constants/prompts';
 import { Colors } from './constants/theme';
 import { styles } from './styles';
-import { streamDelete, streamResponse, streamSingleFill } from './utils/animations';
+import { streamDelete, streamSingleFill } from './utils/animations';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const STORAGE_KEY_API = 'llm_api_key';
@@ -256,15 +256,29 @@ function EditorScreen() {
         let lastPos = 0;
         for (let i = 0; i < thinkingPositions.length; i++) {
           const pos = thinkingPositions[i];
-          result += thinkingBaseText.slice(lastPos, pos);
-          result += waveFrames[frameIndex];
+          let before = thinkingBaseText.slice(lastPos, pos);
+          let after = thinkingBaseText.slice(pos);
+          
+          // Check if there's already a space before/after
+          const hasSpaceBefore = before.endsWith(' ');
+          const hasSpaceAfter = after.startsWith(' ');
+          
+          // Only add space if not already present
+          const spaceBefore = hasSpaceBefore ? '' : ' ';
+          const spaceAfter = hasSpaceAfter ? '' : ' ';
+          
+          result += before + spaceBefore + waveFrames[frameIndex] + spaceAfter;
           lastPos = pos;
         }
         result += thinkingBaseText.slice(lastPos);
         setText(result);
       } else {
         // Single position animation (original behavior)
-        setText(thinkingPrefix + waveFrames[frameIndex] + thinkingSuffix);
+        const hasSpaceBefore = thinkingPrefix.endsWith(' ');
+        const hasSpaceAfter = thinkingSuffix.startsWith(' ');
+        const spaceBefore = hasSpaceBefore ? '' : ' ';
+        const spaceAfter = hasSpaceAfter ? '' : ' ';
+        setText(thinkingPrefix + spaceBefore + waveFrames[frameIndex] + spaceAfter + thinkingSuffix);
       }
       frameIndex = (frameIndex + 1) % waveFrames.length;
     };
@@ -293,80 +307,49 @@ function EditorScreen() {
   // LLM trigger color dots - stored per note
   const [colorDots, setColorDots] = useState([]);
   const [colorFamily, setColorFamily] = useState(null); // Color family for current note
-  const blotCounter = useRef(0); // Track blots for occasional contrast color
   const screenDimensions = Dimensions.get('window');
   
-  // Complementary color families - opposites on the color wheel
-  const complementaryFamilies = {
-    ocean: 'sunset',   // blue ↔ orange
-    sunset: 'ocean',   // orange ↔ blue
-    forest: 'bloom',   // green ↔ pink
-    bloom: 'forest',   // pink ↔ green
-    earth: 'ocean',    // brown ↔ blue
-    plum: 'forest',    // purple ↔ green
-  };
-  
-  // Color families - each note gets one randomly assigned
+  // Color families - each note gets one randomly assigned (mature colors only)
   const colorFamilies = {
-    ocean: [
-      '#40E0D0', // Turquoise
-      '#5BC0DE', // Soft sky blue
-      '#6BB3D9', // Medium blue
-      '#48D1CC', // Medium turquoise
-      '#66CDAA', // Medium aquamarine
-      '#7EC8E3', // Light cerulean
-      '#5DADE2', // Soft dodger blue
-      '#73C6B6', // Soft teal
+    burntOrange: [
+      '#8B4513', // Saddle brown
+      '#A0522D', // Sienna
+      '#B7410E', // Rust
+      '#CC5500', // Burnt orange
+      '#D2691E', // Chocolate
+      '#964B00', // Brown
+      '#8B3A00', // Dark burnt orange
+      '#A45A2A', // Windsor tan
     ],
-    forest: [
-      '#66CDAA', // Medium aquamarine
-      '#7FD67F', // Medium spring green
-      '#8FBC8F', // Dark sea green
-      '#77DD77', // Pastel green
-      '#90EE90', // Light green
-      '#98D98E', // Soft lime
-      '#7CCD7C', // Medium lime
-      '#88D498', // Soft mint
+    darkBlue: [
+      '#191970', // Midnight blue
+      '#000080', // Navy
+      '#1B1B6A', // Dark royal blue
+      '#1C2951', // Space cadet
+      '#002147', // Oxford blue
+      '#1D3461', // Prussian blue
+      '#1A237E', // Indigo dye
+      '#0D1B2A', // Rich black
     ],
-    sunset: [
-      '#FF9966', // Atomic tangerine
-      '#FFAB76', // Soft coral
-      '#FFB347', // Pastel orange
-      '#FFCC80', // Light orange
-      '#FFA07A', // Light salmon
-      '#FFB088', // Soft peach
-      '#FFBE76', // Warm honey
-      '#FFC299', // Apricot
+    bloodRed: [
+      '#660000', // Blood red dark
+      '#8B0000', // Dark red
+      '#800000', // Maroon
+      '#6B0F1A', // Rosewood
+      '#722F37', // Wine
+      '#7B3B3B', // Roast coffee
+      '#701C1C', // Persian plum
+      '#5C0A0A', // Sangria
     ],
-    bloom: [
-      '#FF85A2', // Soft hot pink
-      '#E88FD0', // Medium orchid
-      '#DA70D6', // Orchid
-      '#DDA0DD', // Plum
-      '#FF99CC', // Light pink
-      '#E6A8D7', // Soft mauve
-      '#F49AC2', // Pastel magenta
-      '#D291BC', // Soft lavender pink
-    ],
-    earth: [
-      '#8B7355', // Burly wood brown
-      '#A0826D', // Beaver
-      '#987654', // Pale brown
-      '#B08968', // Tan
-      '#9C7C5B', // Coyote brown
-      '#A67B5B', // Chamoisee
-      '#8E735B', // Shadow brown
-      '#B5906D', // Camel
-    ],
-    plum: [
-      '#8E4585', // Plum
-      '#9B59B6', // Amethyst
-      '#7B3F6B', // Byzantium
-      '#915F78', // Mauve taupe
-      '#A569BD', // Medium purple
-      '#8E5C7B', // Antique fuchsia
-      '#7D4E6B', // Eggplant
-      '#9A6B8C', // Opera mauve
+    deepPurple: [
+      '#301934', // Dark purple
+      '#4A0E4E', // Byzantium purple
+      '#2E0854', // Russian violet
+      '#3C1361', // Persian indigo
+      '#4B0082', // Indigo
+      '#371E4E', // English violet
+      '#2D1B3D', // Dark byzantium
+      '#432C6B', // Spanish violet
     ],
   };
   
@@ -378,17 +361,12 @@ function EditorScreen() {
   };
   
   // Get color based on token count within the note's color family
-  // Few tokens = lighter/cooler shades, many tokens = more saturated/warmer shades
-  const getColorFromTokens = (tokens, useComplementary = false) => {
+  // Few tokens = lighter shades, many tokens = more saturated shades
+  const getColorFromTokens = (tokens) => {
     // Get current family, or pick one if not set
-    let family = colorFamily || getRandomColorFamily();
+    const family = colorFamily || getRandomColorFamily();
     
-    // Use complementary family if requested (for accent blots)
-    if (useComplementary) {
-      family = complementaryFamilies[family] || 'ocean';
-    }
-    
-    const familyColors = colorFamilies[family] || colorFamilies.ocean;
+    const familyColors = colorFamilies[family] || colorFamilies.burntOrange;
     
     // Normalize tokens to pick from different parts of the family palette
     // Lower tokens = earlier colors (typically lighter/cooler within family)
@@ -417,12 +395,6 @@ function EditorScreen() {
   
   // Add a new color dot - size from latency, color from tokens
   const addColorDot = (latencyMs = 500, tokens = 20) => {
-    // Increment blot counter
-    blotCounter.current += 1;
-    
-    // Every 8-12 blots, add a complementary accent color
-    const isAccentBlot = blotCounter.current >= 8 && blotCounter.current % (8 + Math.floor(Math.random() * 5)) === 0;
-    
     // Latency-based size: larger for better glow diffusion
     const minLatency = 200;
     const maxLatency = 2500;
@@ -440,11 +412,9 @@ function EditorScreen() {
     // Generate watercolor blot shapes - multiple overlapping irregular circles
     const blotShapes = [];
     const numShapes = 5 + Math.floor(Math.random() * 4); // 5-8 shapes per blot
-    const baseColor = getColorFromTokens(tokens, isAccentBlot);
-    const family = isAccentBlot 
-      ? complementaryFamilies[colorFamily || 'ocean'] 
-      : (colorFamily || getRandomColorFamily());
-    const familyColors = colorFamilies[family] || colorFamilies.ocean;
+    const baseColor = getColorFromTokens(tokens);
+    const family = colorFamily || getRandomColorFamily();
+    const familyColors = colorFamilies[family] || colorFamilies.burntOrange;
     
     for (let i = 0; i < numShapes; i++) {
       // Pick a slightly different color from the family for variation
@@ -804,7 +774,6 @@ function EditorScreen() {
     // Clear dots and assign new color family for new note
     setColorDots([]);
     setColorFamily(getRandomColorFamily());
-    blotCounter.current = 0; // Reset blot counter for new note
     
     setText('');
     setTitle('New Note');
