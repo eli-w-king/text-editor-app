@@ -3,7 +3,7 @@ import { BlurView } from 'expo-blur';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     Alert,
     Animated,
@@ -343,13 +343,13 @@ function ImageLoadingShimmer({ theme }) {
   const glowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.6] });
 
   const isDark = theme === 'dark';
-  const bgColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+  const bgColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.09)';
   const gradientColors = isDark
     ? ['rgba(255,255,255,0.0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.0)']
-    : ['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0.0)'];
+    : ['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0.0)'];
   const glowColors = isDark
     ? ['rgba(120,140,255,0.0)', 'rgba(120,140,255,0.12)', 'rgba(120,140,255,0.0)']
-    : ['rgba(100,120,200,0.0)', 'rgba(100,120,200,0.10)', 'rgba(100,120,200,0.0)'];
+    : ['rgba(80,100,180,0.0)', 'rgba(80,100,180,0.16)', 'rgba(80,100,180,0.0)'];
 
   return (
     <View style={{
