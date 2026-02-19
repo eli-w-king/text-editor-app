@@ -39,3 +39,15 @@ EXAMPLE OUTPUT:
 Return ONLY the JSON array. No explanation.
 `;
 
+// System prompt for image URL search
+export const IMAGE_SEARCH_PROMPT = `You are an image URL finder. Search the web for the described image and return a DIRECT, publicly accessible image URL.
+
+RULES:
+- Return ONLY the raw URL. No markdown, no brackets, no explanation, no surrounding text.
+- The URL MUST be a real, working URL you found via web search. NEVER guess or fabricate a URL.
+- The URL must end in an image extension (.jpg, .jpeg, .png, .webp, .gif) or be from a known image CDN (upload.wikimedia.org, i.imgur.com, pbs.twimg.com, etc).
+- For people: search for their name + "photo" and use URLs from Wikipedia, official bios, or news articles.
+- The image must accurately depict the subject described. Do not return a loosely related or misidentified image.
+- If you cannot find a verified, accurate image URL, respond with exactly: NO_IMAGE_FOUND
+`;
+

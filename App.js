@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
+import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
@@ -201,6 +202,189 @@ const rebuildWithSpacing = (prefix, content, suffix) => {
   return { prefix: trimmedPrefix, content: spacedContent, suffix: trimmedSuffix };
 };
 
+// --- Image support utilities ---
+
+const IMAGE_MARKER_REGEX = /\[IMG\|\|(.*?)\|\|(.*?)\]/g;
+
+// Parse text with [IMG||url||alt] markers into content blocks for rendering
+const IMAGE_LOADING_PLACEHOLDER_REGEX = /__IMG_LOADING_\d+__/;
+
+const textToBlocks = (text) => {
+  const blocks = [];
+  // Combined regex for both image markers and loading placeholders
+  const combinedRegex = new RegExp(`(${IMAGE_MARKER_REGEX.source})|(${IMAGE_LOADING_PLACEHOLDER_REGEX.source})`, 'g');
+  let lastIndex = 0;
+  let match;
+
+  while ((match = combinedRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      blocks.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+    }
+    if (match[1]) {
+      // Image marker: [IMG||url||alt]
+      blocks.push({ type: 'image', uri: match[2], alt: match[3] });
+    } else {
+      // Loading placeholder - store the raw placeholder string for serialization
+      blocks.push({ type: 'image_loading', placeholder: match[0] });
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    blocks.push({ type: 'text', content: text.slice(lastIndex) });
+  }
+
+  // Always ensure there's a text block at the end so the user can type after images
+  if (blocks.length === 0 || blocks[blocks.length - 1].type !== 'text') {
+    blocks.push({ type: 'text', content: '' });
+  }
+
+  return blocks;
+};
+
+// Serialize content blocks back to text string with [IMG||url||alt] markers
+const blocksToText = (blocks) => {
+  return blocks.map(b => {
+    if (b.type === 'image') return `[IMG||${b.uri}||${b.alt}]`;
+    if (b.type === 'image_loading') return b.placeholder || '';
+    return b.content;
+  }).join('');
+};
+
+// Strip image markers and loading placeholders from text (for title generation, previews, etc.)
+// Handles both new [IMG||...||...] and old [IMG:...] formats
+const stripImageMarkers = (text) => {
+  return text
+    .replace(new RegExp(IMAGE_MARKER_REGEX.source, 'g'), '')
+    .replace(/\[IMG:[^\]]*\]?/g, '')
+    .replace(/__IMG_LOADING_\d+__/g, '')
+    .trim();
+};
+
+// Search for images using Gemini with Google Search grounding via the Cloudflare Worker
+const searchGoogleImages = async (query) => {
+  try {
+    const baseUrl = getApiBaseUrl();
+    if (!baseUrl) return null;
+
+    const response = await fetch(`${baseUrl}/search-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+
+    const data = await response.json();
+    if (data.error || !data.images || data.images.length === 0) {
+      console.log('Image search returned no results:', data.error);
+      return null;
+    }
+
+    // Worker already validated the URL server-side
+    console.log('Gemini Search image found:', data.images[0].url);
+    return data.images[0].url;
+  } catch (error) {
+    console.error('Gemini Search error:', error);
+    return null;
+  }
+};
+
+// Search for a real image URL using OpenRouter + web search plugin
+// Generate an image using Gemini via the Cloudflare Worker proxy
+const generateImageWithGemini = async (query) => {
+  try {
+    const baseUrl = getApiBaseUrl();
+    if (!baseUrl) return null;
+
+    const response = await fetch(`${baseUrl}/generate-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: query }),
+    });
+
+    const data = await response.json();
+    if (data.error || !data.imageData) {
+      console.error('Image generation failed:', data.error);
+      return null;
+    }
+
+    // Return as data URI — works with expo-image and the || delimiter won't break on colons
+    const mimeType = data.mimeType || 'image/png';
+    return `data:${mimeType};base64,${data.imageData}`;
+  } catch (error) {
+    console.error('Image generation error:', error);
+    return null;
+  }
+};
+
+// Ambient image loading shimmer component
+function ImageLoadingShimmer({ theme }) {
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    const glow = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    glow.start();
+    return () => { pulse.stop(); glow.stop(); };
+  }, []);
+
+  const opacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
+  const glowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.6] });
+
+  const isDark = theme === 'dark';
+  const bgColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.09)';
+  const gradientColors = isDark
+    ? ['rgba(255,255,255,0.0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.0)']
+    : ['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0.0)'];
+  const glowColors = isDark
+    ? ['rgba(120,140,255,0.0)', 'rgba(120,140,255,0.12)', 'rgba(120,140,255,0.0)']
+    : ['rgba(80,100,180,0.0)', 'rgba(80,100,180,0.16)', 'rgba(80,100,180,0.0)'];
+
+  return (
+    <View style={{
+      height: 220,
+      marginVertical: 12,
+      marginHorizontal: 24,
+      borderRadius: 12,
+      overflow: 'hidden',
+      backgroundColor: bgColor,
+    }}>
+      <Animated.View style={{ ...StyleSheet.absoluteFillObject, opacity }}>
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      <Animated.View style={{ ...StyleSheet.absoluteFillObject, opacity: glowOpacity }}>
+        <LinearGradient
+          colors={glowColors}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      <BlurView
+        intensity={40}
+        tint={isDark ? 'dark' : 'light'}
+        style={StyleSheet.absoluteFill}
+      />
+    </View>
+  );
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -233,6 +417,11 @@ function EditorScreen() {
   // For multi-position thinking animation (batch fill with multiple /)
   const [thinkingPositions, setThinkingPositions] = useState([]); // Array of positions to animate
   const [thinkingBaseText, setThinkingBaseText] = useState(''); // Original text with / removed
+
+  // Image support state
+  const [contentBlocks, setContentBlocks] = useState([{ type: 'text', content: '' }]);
+  const [imageLoading, setImageLoading] = useState(false); // true while searching/generating an image
+  const textInputRefs = useRef([]); // refs for each text block's TextInput
   
   useEffect(() => {
     if (!isThinking) return;
@@ -810,8 +999,9 @@ function EditorScreen() {
 
   // Auto-generate title when text changes significantly
   useEffect(() => {
+    const textOnly = stripImageMarkers(text);
     const timeout = setTimeout(() => {
-      if (llmStatus === 'connected' && text.length > 20 && Math.abs(text.length - lastTitleGenLength) > 50) {
+      if (llmStatus === 'connected' && textOnly.length > 20 && Math.abs(textOnly.length - lastTitleGenLength) > 50) {
         generateTitle();
       }
     }, 3000); // Debounce 3s
@@ -823,10 +1013,10 @@ function EditorScreen() {
     
     try {
       const data = await makeApiCall('/chat/completions', {
-        model: 'google/gemini-2.5-flash-lite-preview-09-2025',
+        model: 'google/gemini-2.5-flash-lite',
         messages: [
           { role: 'system', content: "You are a helpful assistant. Summarize the user's text into a short, concise title (3-5 words max). Do not use quotes. IMPORTANT: The title MUST be in the same language as the user's text. If they write in Spanish, title in Spanish. If French, title in French. Match their language exactly." },
-          { role: 'user', content: text.slice(0, 1000) } // Limit context
+          { role: 'user', content: stripImageMarkers(text.slice(0, 1000)) } // Limit context, strip image markers
         ],
         temperature: 0.3,
         max_tokens: 10,
@@ -966,6 +1156,36 @@ function EditorScreen() {
   };
 
   const handleTextChange = (newText) => {
+    // Clean up any old-format [IMG:...] markers (with or without closing bracket)
+    const cleanedText = newText.replace(/\[IMG:[^\]]*\]?/g, '');
+    if (cleanedText !== newText) {
+      setText(cleanedText);
+      return;
+    }
+
+    // Check for /image query/ command FIRST (before // trigger)
+    // Require the / to be preceded by whitespace or start-of-string to avoid matching inside URLs/markers
+    const imageMatch = newText.match(/(?:^|[\s\n])\/image\s+(.+?)\//i);
+    if (imageMatch) {
+      const query = imageMatch[1].trim();
+      // Guard: skip if the captured query contains marker fragments
+      if (query.length > 0 && !query.includes('[IMG')) {
+        // Calculate the actual /image position (the match may include a leading space)
+        const fullMatch = imageMatch[0];
+        const leadingChars = fullMatch.length - fullMatch.trimStart().length;
+        const matchIndex = imageMatch.index + leadingChars;
+        const matchLength = fullMatch.trimStart().length;
+        const before = newText.slice(0, matchIndex);
+        const after = newText.slice(matchIndex + matchLength);
+        // Insert a loading placeholder into text and trigger image search
+        const placeholderId = `__IMG_LOADING_${Date.now()}__`;
+        const cleanText = before + placeholderId + after;
+        setText(cleanText);
+        triggerImageCommand(query, placeholderId);
+        return;
+      }
+    }
+
     // Check for // trigger (double slash to fill all blanks)
     const doubleTriggerRegex = /(?<!:)\/\//;
     const doubleMatch = newText.match(doubleTriggerRegex);
@@ -1008,14 +1228,99 @@ function EditorScreen() {
     }
   };
 
+  // Orchestrate image search + fallback generation
+  const triggerImageCommand = async (query, placeholderId) => {
+    if (llmStatus !== 'connected') {
+      Alert.alert('LLM API Not Connected', 'Tap the Cloud button in the menu to add your OpenRouter API key.');
+      return;
+    }
+
+    setImageLoading(true);
+
+    try {
+      // Resolve pronouns/references using note context
+      const noteContext = stripImageMarkers(text.replace(placeholderId, '').trim()).slice(0, 500);
+      let resolvedQuery = query;
+
+      if (noteContext.length > 0 && /\b(he|she|her|him|his|they|them|it|this|that)\b/i.test(query)) {
+        try {
+          const data = await makeApiCall('/chat/completions', {
+            model: 'anthropic/claude-haiku-4.5',
+            messages: [
+              { role: 'system', content: 'The user is writing a note and wants to insert an image. Resolve any pronouns or vague references in their image request using the note context. Return ONLY the resolved description (e.g. "Sam Altman smiling"). No explanation.' },
+              { role: 'user', content: `Note context: "${noteContext}"\n\nImage request: "${query}"` },
+            ],
+            temperature: 0.1,
+            max_tokens: 50,
+          }, apiKey);
+          const resolved = coerceMessageContent(data.choices?.[0]?.message?.content || '').trim();
+          if (resolved.length > 0) resolvedQuery = resolved;
+        } catch (e) {
+          // If resolution fails, use original query
+        }
+      }
+
+      // Step 1: Try Gemini with Google Search grounding (most accurate)
+      let imageUri = await searchGoogleImages(resolvedQuery);
+
+      // Step 2: Fall back to Gemini generation as last resort
+      if (!imageUri) {
+        console.log('Image search returned no results, falling back to Gemini image generation...');
+        imageUri = await generateImageWithGemini(resolvedQuery);
+      }
+
+      if (imageUri) {
+        // Replace the placeholder with the real image marker in current text
+        const marker = `[IMG||${imageUri}||${query}]`;
+        setText(prev => prev.replace(placeholderId, marker));
+      } else {
+        // Remove the placeholder if search failed
+        setText(prev => prev.replace(placeholderId, ''));
+        Alert.alert('Image Not Found', `Could not find or generate an image for "${query}".`);
+      }
+    } catch (error) {
+      console.error('Image command error:', error);
+      Alert.alert('Error', 'Something went wrong while fetching the image.');
+    } finally {
+      setImageLoading(false);
+    }
+  };
+
+  // Handle text change within a specific content block
+  const handleBlockTextChange = (blockIndex, newBlockText) => {
+    const newBlocks = [...contentBlocks];
+    newBlocks[blockIndex] = { ...newBlocks[blockIndex], content: newBlockText };
+
+    // Serialize back to text and run through normal handleTextChange
+    const serialized = blocksToText(newBlocks);
+    handleTextChange(serialized);
+  };
+
+  // Sync contentBlocks from text whenever text changes
+  useEffect(() => {
+    setContentBlocks(textToBlocks(text));
+  }, [text]);
+
   // Find all standalone / placeholders: preceded by space/start, not part of // or ://
+  // Also skips slashes inside [IMG:...] markers
   const findAllSlashPlaceholders = (text) => {
+    // Build set of index ranges occupied by [IMG:...] markers
+    const imgRanges = [];
+    const imgRegex = new RegExp(IMAGE_MARKER_REGEX.source, 'g');
+    let imgMatch;
+    while ((imgMatch = imgRegex.exec(text)) !== null) {
+      imgRanges.push([imgMatch.index, imgMatch.index + imgMatch[0].length]);
+    }
+    const isInsideImgMarker = (idx) => imgRanges.some(([start, end]) => idx >= start && idx < end);
+
     const positions = [];
     for (let i = 0; i < text.length; i++) {
       if (text[i] === '/') {
+        if (isInsideImgMarker(i)) continue;
+
         const prevChar = i > 0 ? text[i - 1] : ' ';
         const nextChar = i < text.length - 1 ? text[i + 1] : ' ';
-        
+
         // Must not be part of // or ://
         if (prevChar !== ':' && prevChar !== '/' && nextChar !== '/') {
           // Must have space-like character before (or be at start)
@@ -1516,7 +1821,7 @@ function EditorScreen() {
               </Animated.View>
 
               {/* Editor */}
-              <ScrollView 
+              <ScrollView
                 ref={scrollViewRef}
                 style={styles.editorWrapper}
                 contentContainerStyle={{ flexGrow: 1, paddingTop: 280, paddingBottom: 300 }}
@@ -1529,16 +1834,47 @@ function EditorScreen() {
                 )}
                 scrollEventThrottle={16}
               >
-                <TextInput
-                  style={[styles.editor, { minHeight: '100%', color: Colors[theme].text, marginTop: 16 }]}
-                  multiline
-                  scrollEnabled={false}
-                  value={text}
-                  onChangeText={handleTextChange}
-                  placeholder="Type / for blanks, // to fill them"
-                  placeholderTextColor="#9ca3af"
-                  textAlignVertical="top"
-                />
+                {contentBlocks.map((block, index) => {
+                  if (block.type === 'image') {
+                    return (
+                      <View key={`img-${index}`} style={styles.imageBlock}>
+                        <ExpoImage
+                          source={{ uri: block.uri }}
+                          style={styles.imageContent}
+                          contentFit="cover"
+                          transition={200}
+                          onError={() => console.log('Image failed to load:', block.uri?.slice(0, 100))}
+                        />
+                      </View>
+                    );
+                  }
+                  if (block.type === 'image_loading') {
+                    return (
+                      <ImageLoadingShimmer key={`loading-${index}`} theme={theme} />
+                    );
+                  }
+                  // Ensure text blocks after images/loading have minimum height so they're tappable
+                  const prevBlock = index > 0 ? contentBlocks[index - 1] : null;
+                  const isAfterImage = prevBlock?.type === 'image' || prevBlock?.type === 'image_loading';
+                  return (
+                    <TextInput
+                      key={`text-${index}`}
+                      ref={(ref) => { textInputRefs.current[index] = ref; }}
+                      style={[
+                        styles.editor,
+                        { color: Colors[theme].text, marginTop: index === 0 ? 16 : 0 },
+                        isAfterImage ? { minHeight: 120 } : null,
+                      ]}
+                      multiline
+                      scrollEnabled={false}
+                      value={block.content}
+                      onChangeText={(newText) => handleBlockTextChange(index, newText)}
+                      placeholder={index === 0 && contentBlocks.length === 1 ? "Type / for blanks, // to fill them, /image query/" : isAfterImage ? "Keep typing..." : undefined}
+                      placeholderTextColor="#9ca3af"
+                      textAlignVertical="top"
+                    />
+                  );
+                })}
               </ScrollView>
             </View>
           </TouchableWithoutFeedback>
@@ -1690,7 +2026,7 @@ function EditorScreen() {
                       opacity: 0.7,
                       marginTop: 4,
                     }} numberOfLines={1}>
-                      {note.content || 'No content'}
+                      {note.content ? stripImageMarkers(note.content).replace(/\[IMG\|\|.*?\|\|.*?\]/g, '').trim() || '(image)' : 'No content'}
                     </Text>
                   </TouchableOpacity>
                 );
