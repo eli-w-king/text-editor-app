@@ -149,4 +149,39 @@ export const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     lineHeight: 16,
   },
+  // Image support styles
+  imageBlock: {
+    marginVertical: 12,
+    marginHorizontal: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  imageContent: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+  },
+  imageCaption: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 6,
+    fontStyle: 'italic',
+    paddingHorizontal: 4,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+  },
+  imageLoadingContainer: {
+    height: 150,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 12,
+    marginHorizontal: 24,
+  },
+  imageLoadingText: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 8,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+  },
 });
