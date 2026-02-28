@@ -1,151 +1,128 @@
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
+  View,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface LoginScreenProps {
   onSwitchToRegister: () => void;
 }
 
 export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
-  const { login, error } = useAuth();
+  const { login, error, clearError, isLoading } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  const displayError = localError || error;
 
   const handleLogin = async () => {
-    setLocalError(null);
+    clearError();
+    if (!email.trim() || !password) return;
 
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      setLocalError('Please enter your email address.');
-      return;
-    }
-    if (!password) {
-      setLocalError('Please enter your password.');
-      return;
-    }
-
-    setIsSubmitting(true);
     try {
-      await login(trimmedEmail, password);
+      await login(email.trim(), password);
     } catch {
-      // Error is set in context or caught above
-    } finally {
-      setIsSubmitting(false);
+      // Error is handled by AuthContext
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* Watercolor-inspired background accents */}
-      <View style={styles.dotAccent1} />
-      <View style={styles.dotAccent2} />
-      <View style={styles.dotAccent3} />
+      {/* Background gradient */}
+      <LinearGradient
+        colors={['#E8E8ED', '#D1D1D6', '#E8E8ED']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
 
       <KeyboardAvoidingView
-        style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        style={styles.keyboardView}
       >
-        <View style={styles.cardWrapper}>
-          <BlurView
-            intensity={60}
-            tint="light"
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.cardContent}>
-            {/* Header */}
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to continue writing</Text>
+        <View style={styles.cardContainer}>
+          <BlurView intensity={60} tint="light" style={styles.blurCard}>
+            <View style={styles.cardContent}>
+              {/* Header */}
+              <Text style={styles.title}>Welcome back</Text>
+              <Text style={styles.subtitle}>Sign in to your Writer account</Text>
 
-            {/* Error Display */}
-            {displayError && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{displayError}</Text>
-              </View>
-            )}
-
-            {/* Email Input */}
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Email</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="you@example.com"
-                placeholderTextColor="#A0A0A5"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                value={email}
-                onChangeText={(text) => {
-                  setEmail(text);
-                  setLocalError(null);
-                }}
-                editable={!isSubmitting}
-              />
-            </View>
-
-            {/* Password Input */}
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your password"
-                placeholderTextColor="#A0A0A5"
-                secureTextEntry
-                autoCapitalize="none"
-                autoComplete="password"
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  setLocalError(null);
-                }}
-                editable={!isSubmitting}
-                onSubmitEditing={handleLogin}
-                returnKeyType="done"
-              />
-            </View>
-
-            {/* Sign In Button */}
-            <TouchableOpacity
-              style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
-              onPress={handleLogin}
-              disabled={isSubmitting}
-              activeOpacity={0.8}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Sign In</Text>
+              {/* Error message */}
+              {error && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
               )}
-            </TouchableOpacity>
 
-            {/* Switch to Register */}
-            <TouchableOpacity
-              style={styles.switchButton}
-              onPress={onSwitchToRegister}
-              disabled={isSubmitting}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.switchText}>
-                Don't have an account?{' '}
-                <Text style={styles.switchTextBold}>Create Account</Text>
-              </Text>
-            </TouchableOpacity>
-          </View>
+              {/* Email */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor="rgba(0,0,0,0.3)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  autoComplete="email"
+                />
+              </View>
+
+              {/* Password */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Password</Text>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Enter your password"
+                  placeholderTextColor="rgba(0,0,0,0.3)"
+                  secureTextEntry
+                  textContentType="password"
+                  autoComplete="current-password"
+                />
+              </View>
+
+              {/* Submit button */}
+              <TouchableOpacity
+                style={[styles.button, isLoading && styles.buttonDisabled]}
+                onPress={handleLogin}
+                disabled={isLoading}
+                activeOpacity={0.8}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.buttonText}>Sign In</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Switch to register */}
+              <TouchableOpacity
+                style={styles.switchButton}
+                onPress={onSwitchToRegister}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.switchText}>
+                  Don't have an account? <Text style={styles.switchLink}>Create one</Text>
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -155,7 +132,6 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E8E8ED',
   },
   keyboardView: {
     flex: 1,
@@ -163,129 +139,105 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
   },
-  // Watercolor-inspired decorative dots
-  dotAccent1: {
-    position: 'absolute',
-    top: '12%',
-    left: -40,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(198, 109, 54, 0.12)', // burntOrange family
-  },
-  dotAccent2: {
-    position: 'absolute',
-    top: '8%',
-    right: -30,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(45, 64, 116, 0.10)', // darkBlue family
-  },
-  dotAccent3: {
-    position: 'absolute',
-    bottom: '15%',
-    right: -20,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(100, 36, 51, 0.08)', // bloodRed family
-  },
-  cardWrapper: {
+  cardContainer: {
     width: '100%',
     maxWidth: 400,
     borderRadius: 20,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.1)',
+    // Shadow for card depth
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
     elevation: 8,
+  },
+  blurCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
   },
   cardContent: {
     padding: 32,
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: '#000000',
+    fontWeight: '300',
+    color: '#1C1C1E',
+    marginBottom: 6,
+    letterSpacing: -0.5,
     fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
-    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#8E8E93',
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontSize: 14,
+    color: 'rgba(0,0,0,0.45)',
     marginBottom: 28,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
   },
   errorContainer: {
-    backgroundColor: 'rgba(255, 59, 48, 0.08)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 59, 48, 0.3)',
+    backgroundColor: 'rgba(255, 59, 48, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.25)',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 20,
-  },
-  errorText: {
-    color: '#FF3B30',
-    fontSize: 14,
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
-    lineHeight: 20,
-  },
-  inputWrapper: {
+    padding: 12,
     marginBottom: 16,
   },
-  inputLabel: {
+  errorText: {
+    color: '#D32F2F',
     fontSize: 13,
-    fontWeight: '600',
-    color: '#3C3C43',
     fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+  },
+  fieldGroup: {
+    marginBottom: 18,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(0,0,0,0.5)',
     marginBottom: 6,
+    letterSpacing: 0.3,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
   },
   input: {
-    backgroundColor: '#F2F2F7',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E5EA',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    padding: 14,
     fontSize: 16,
-    color: '#000000',
+    color: '#1C1C1E',
     fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
   },
-  primaryButton: {
-    backgroundColor: '#000000',
+  button: {
+    backgroundColor: '#1C1C1E',
     borderRadius: 12,
-    paddingVertical: 16,
+    padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
     minHeight: 52,
   },
-  primaryButtonDisabled: {
-    opacity: 0.6,
+  buttonDisabled: {
+    opacity: 0.5,
   },
-  primaryButtonText: {
+  buttonText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
   },
   switchButton: {
+    marginTop: 24,
     alignItems: 'center',
-    marginTop: 20,
-    paddingVertical: 8,
   },
   switchText: {
-    fontSize: 15,
-    color: '#8E8E93',
+    fontSize: 14,
+    color: 'rgba(0,0,0,0.45)',
     fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
   },
-  switchTextBold: {
-    color: '#000000',
-    fontWeight: '600',
+  switchLink: {
+    color: '#1C1C1E',
+    textDecorationLine: 'underline',
   },
 });

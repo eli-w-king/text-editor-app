@@ -18,7 +18,7 @@ import ThemeToggle from '@/components/ThemeToggle';
  *   - Content rendered on top
  */
 export default function Layout() {
-  const { theme, toggleTheme, isDark } = useTheme();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <div

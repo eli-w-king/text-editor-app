@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  login as authLogin,
+  register as authRegister,
+  logout as authLogout,
+  validateToken,
+  getStoredUser,
+  isAuthenticated as checkAuth,
+} from '../services/auth';
 import type { User } from '../services/auth';
-import * as authService from '../services/auth';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface AuthContextType {
   user: User | null;
@@ -13,112 +16,72 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  error: string | null;
-  clearError: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // On mount, check for an existing token and validate it
+  // On mount, check for a stored token and validate it
   useEffect(() => {
-    let cancelled = false;
-
-    async function checkAuth() {
-      try {
-        const currentUser = await authService.getCurrentUser();
-        if (!cancelled) {
-          setUser(currentUser);
-        }
-      } catch {
-        // Silently fail -- user just isn't logged in
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+    const initAuth = async () => {
+      if (!checkAuth()) {
+        setIsLoading(false);
+        return;
       }
-    }
 
-    checkAuth();
+      // Optimistically set user from localStorage while validating
+      const storedUser = getStoredUser();
+      if (storedUser) {
+        setUser(storedUser);
+      }
 
-    return () => {
-      cancelled = true;
+      // Validate the token with the server
+      const validatedUser = await validateToken();
+      if (validatedUser) {
+        setUser(validatedUser);
+      } else {
+        setUser(null);
+      }
+
+      setIsLoading(false);
     };
+
+    initAuth();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    setError(null);
-    setIsLoading(true);
-    try {
-      const result = await authService.login(email, password);
-      setUser(result.user);
-    } catch (err: any) {
-      const message = err?.message || 'Login failed';
-      setError(message);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
+    const response = await authLogin(email, password);
+    setUser(response.user);
   }, []);
 
   const register = useCallback(async (email: string, password: string) => {
-    setError(null);
-    setIsLoading(true);
-    try {
-      const result = await authService.register(email, password);
-      setUser(result.user);
-    } catch (err: any) {
-      const message = err?.message || 'Registration failed';
-      setError(message);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
+    const response = await authRegister(email, password);
+    setUser(response.user);
   }, []);
 
   const logout = useCallback(() => {
-    authService.logout();
+    authLogout();
     setUser(null);
-    setError(null);
   }, []);
 
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+  const value: AuthContextType = {
+    user,
+    isLoading,
+    isAuthenticated: user !== null,
+    login,
+    register,
+    logout,
+  };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isLoading,
-        isAuthenticated: !!user,
-        login,
-        register,
-        logout,
-        error,
-        clearError,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 };
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
