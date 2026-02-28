@@ -20,7 +20,7 @@ interface RegisterScreenProps {
 }
 
 export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
-  const { register, error, clearError, isLoading } = useAuth();
+  const { register, error, clearError, isSubmitting } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,6 +28,35 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
   const [localError, setLocalError] = useState<string | null>(null);
 
   const displayError = localError || error;
+  const canSubmit =
+    email.trim().length > 0 &&
+    password.length > 0 &&
+    confirmPassword.length > 0 &&
+    !isSubmitting;
+
+  /**
+   * Clear both local validation errors and context-level API errors
+   * whenever the user modifies any input field.
+   */
+  const clearAllErrors = () => {
+    if (localError) setLocalError(null);
+    if (error) clearError();
+  };
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    clearAllErrors();
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    clearAllErrors();
+  };
+
+  const handleConfirmPasswordChange = (text: string) => {
+    setConfirmPassword(text);
+    clearAllErrors();
+  };
 
   const handleRegister = async () => {
     clearError();
@@ -59,7 +88,7 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
     try {
       await register(trimmedEmail, password);
     } catch {
-      // Error is handled by AuthContext
+      // Error is handled by AuthContext and displayed via displayError
     }
   };
 
@@ -97,7 +126,7 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
                 <TextInput
                   style={styles.input}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={handleEmailChange}
                   placeholder="you@example.com"
                   placeholderTextColor="rgba(0,0,0,0.3)"
                   autoCapitalize="none"
@@ -105,47 +134,50 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
                   keyboardType="email-address"
                   textContentType="emailAddress"
                   autoComplete="email"
+                  editable={!isSubmitting}
                 />
               </View>
 
-              {/* Password */}
+              {/* Password -- secureTextEntry masks the password field */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Password</Text>
                 <TextInput
                   style={styles.input}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   placeholder="Min. 8 characters"
                   placeholderTextColor="rgba(0,0,0,0.3)"
                   secureTextEntry
                   textContentType="newPassword"
                   autoComplete="new-password"
+                  editable={!isSubmitting}
                 />
               </View>
 
-              {/* Confirm password */}
+              {/* Confirm password -- secureTextEntry masks the field */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Confirm password</Text>
                 <TextInput
                   style={styles.input}
                   value={confirmPassword}
-                  onChangeText={setConfirmPassword}
+                  onChangeText={handleConfirmPasswordChange}
                   placeholder="Re-enter your password"
                   placeholderTextColor="rgba(0,0,0,0.3)"
                   secureTextEntry
                   textContentType="newPassword"
                   autoComplete="new-password"
+                  editable={!isSubmitting}
                 />
               </View>
 
-              {/* Submit button */}
+              {/* Submit button -- disabled when fields are empty or during submission */}
               <TouchableOpacity
-                style={[styles.button, isLoading && styles.buttonDisabled]}
+                style={[styles.button, !canSubmit && styles.buttonDisabled]}
                 onPress={handleRegister}
-                disabled={isLoading}
+                disabled={!canSubmit}
                 activeOpacity={0.8}
               >
-                {isLoading ? (
+                {isSubmitting ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <Text style={styles.buttonText}>Create Account</Text>

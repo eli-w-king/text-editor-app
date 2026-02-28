@@ -18,7 +18,10 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
-  const { login, error, clearError, isLoading } = useAuth();
+  // Use isSubmitting (not isLoading) for the button state.
+  // isLoading is only for initial session restoration and is consumed by AuthGate.
+  // isSubmitting tracks whether a login/register API call is in flight.
+  const { login, error, clearError, isSubmitting } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -96,12 +99,12 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
 
               {/* Submit button */}
               <TouchableOpacity
-                style={[styles.button, isLoading && styles.buttonDisabled]}
+                style={[styles.button, isSubmitting && styles.buttonDisabled]}
                 onPress={handleLogin}
-                disabled={isLoading}
+                disabled={isSubmitting}
                 activeOpacity={0.8}
               >
-                {isLoading ? (
+                {isSubmitting ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <Text style={styles.buttonText}>Sign In</Text>
