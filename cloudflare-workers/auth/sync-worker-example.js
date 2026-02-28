@@ -16,14 +16,66 @@
 import { validateAuthToken, withAuth, corsHeaders } from './auth-middleware.js';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Maximum allowed request body size in bytes (10 KB). */
+const MAX_BODY_SIZE = 10 * 1024;
+
+/** Regex for valid document IDs -- alphanumeric, hyphens, underscores, 1-128 chars. */
+const DOCUMENT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+
+// ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
 
-function jsonResponse(body, status = 200) {
+/**
+ * Build a JSON response with CORS headers derived from the request origin.
+ *
+ * @param {Request} request - The incoming request (used for CORS origin check)
+ * @param {object} body - Response body to serialize
+ * @param {number} [status=200] - HTTP status code
+ * @returns {Response}
+ */
+function jsonResponse(request, body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(request), 'Content-Type': 'application/json' },
   });
+}
+
+/**
+ * Read and parse the request body as JSON, enforcing a size limit.
+ * Returns the parsed object, or a Response if the body is too large or invalid.
+ *
+ * @param {Request} request - The incoming request
+ * @returns {Promise<{ data?: object, error?: Response }>}
+ */
+async function parseJsonBody(request) {
+  // Check Content-Length header first for an early rejection
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
+    return {
+      error: jsonResponse(request, { error: 'Request body too large. Maximum size is 10KB.' }, 413),
+    };
+  }
+
+  // Read the body as text so we can enforce the byte-level limit even when
+  // Content-Length is absent (e.g. chunked transfer)
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_SIZE) {
+    return {
+      error: jsonResponse(request, { error: 'Request body too large. Maximum size is 10KB.' }, 413),
+    };
+  }
+
+  try {
+    return { data: JSON.parse(text) };
+  } catch {
+    return {
+      error: jsonResponse(request, { error: 'Invalid JSON body' }, 400),
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -41,7 +93,7 @@ async function handleListDocuments(request, env) {
   const indexJSON = await env.DOCUMENTS_KV.get(indexKey);
   const documents = indexJSON ? JSON.parse(indexJSON) : [];
 
-  return jsonResponse({ documents });
+  return jsonResponse(request, { documents });
 }
 
 /**
@@ -50,16 +102,21 @@ async function handleListDocuments(request, env) {
 async function handleSaveDocument(request, env) {
   const userId = request.auth.sub;
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400);
-  }
+  const { data: body, error } = await parseJsonBody(request);
+  if (error) return error;
 
   const { id, title, content } = body;
   if (!id || !content) {
-    return jsonResponse({ error: 'Missing required fields: id, content' }, 400);
+    return jsonResponse(request, { error: 'Missing required fields: id, content' }, 400);
+  }
+
+  // Validate document ID to prevent KV key injection
+  if (!DOCUMENT_ID_REGEX.test(id)) {
+    return jsonResponse(
+      request,
+      { error: 'Invalid document id. Must be 1-128 alphanumeric, hyphen, or underscore characters.' },
+      400,
+    );
   }
 
   const doc = {
@@ -89,7 +146,7 @@ async function handleSaveDocument(request, env) {
 
   await env.DOCUMENTS_KV.put(indexKey, JSON.stringify(index));
 
-  return jsonResponse({ document: doc });
+  return jsonResponse(request, { document: doc });
 }
 
 /**
@@ -100,10 +157,10 @@ async function handleGetDocument(request, env, docId) {
 
   const docJSON = await env.DOCUMENTS_KV.get(`docs:user:${userId}:doc:${docId}`);
   if (!docJSON) {
-    return jsonResponse({ error: 'Document not found' }, 404);
+    return jsonResponse(request, { error: 'Document not found' }, 404);
   }
 
-  return jsonResponse({ document: JSON.parse(docJSON) });
+  return jsonResponse(request, { document: JSON.parse(docJSON) });
 }
 
 // ---------------------------------------------------------------------------
@@ -112,41 +169,64 @@ async function handleGetDocument(request, env, docId) {
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+    try {
+      const url = new URL(request.url);
+      const path = url.pathname;
 
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders });
+      // Handle CORS preflight
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: corsHeaders(request) });
+      }
+
+      // Health check (public)
+      if (path === '/' || path === '/health') {
+        if (request.method !== 'GET') {
+          return jsonResponse(request, { error: 'Method not allowed' }, 405);
+        }
+        return jsonResponse(request, {
+          status: 'ok',
+          service: 'writer-app-sync',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // ----- /api/documents routes (require auth) -----
+
+      if (path === '/api/documents') {
+        if (request.method === 'GET') {
+          return withAuth(handleListDocuments)(request, env, ctx);
+        }
+        if (request.method === 'POST') {
+          return withAuth(handleSaveDocument)(request, env, ctx);
+        }
+        // Known path, wrong method
+        return jsonResponse(request, { error: 'Method not allowed' }, 405);
+      }
+
+      // Match /api/documents/:id
+      const docMatch = path.match(/^\/api\/documents\/([a-zA-Z0-9_-]+)$/);
+      if (docMatch) {
+        if (request.method !== 'GET') {
+          return jsonResponse(request, { error: 'Method not allowed' }, 405);
+        }
+        const docId = docMatch[1];
+        return withAuth(async (req, e, c) => {
+          return handleGetDocument(req, e, docId);
+        })(request, env, ctx);
+      }
+
+      return jsonResponse(request, { error: 'Not found' }, 404);
+    } catch {
+      // Global error handler -- never leak internal details to the client.
+      // Include CORS headers so the browser can read the error response.
+      const hdrs = corsHeaders(request);
+      return new Response(
+        JSON.stringify({ error: 'Internal server error' }),
+        {
+          status: 500,
+          headers: { ...hdrs, 'Content-Type': 'application/json' },
+        },
+      );
     }
-
-    // Health check (public)
-    if (path === '/' || path === '/health') {
-      return jsonResponse({
-        status: 'ok',
-        service: 'writer-app-sync',
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    // All /api/documents routes require auth
-    if (path === '/api/documents' && request.method === 'GET') {
-      return withAuth(handleListDocuments)(request, env, ctx);
-    }
-
-    if (path === '/api/documents' && request.method === 'POST') {
-      return withAuth(handleSaveDocument)(request, env, ctx);
-    }
-
-    // Match /api/documents/:id
-    const docMatch = path.match(/^\/api\/documents\/([a-zA-Z0-9_-]+)$/);
-    if (docMatch && request.method === 'GET') {
-      const docId = docMatch[1];
-      return withAuth(async (req, env, ctx) => {
-        return handleGetDocument(req, env, docId);
-      })(request, env, ctx);
-    }
-
-    return jsonResponse({ error: 'Not found' }, 404);
   },
 };

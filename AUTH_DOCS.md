@@ -2,7 +2,7 @@
 
 ## Overview
 
-Writer App uses a simple email/password authentication system built for MVP. The backend runs on Cloudflare Workers with KV storage, and clients (mobile + desktop) store JWT tokens locally.
+Inlay uses a simple email/password authentication system built for MVP. The backend runs on Cloudflare Workers with KV storage, and clients (mobile + desktop) store JWT tokens locally.
 
 **Architecture:**
 ```

@@ -1,4 +1,20 @@
-import React, { useState } from 'react';
+/**
+ * RegisterScreen -- mobile registration form with frosted glass aesthetic.
+ *
+ * PLATFORM: React Native (mobile)
+ * COUNTERPART: desktop/src/pages/Register.tsx (web)
+ *
+ * Security notes:
+ *   - Both password fields use secureTextEntry (native masking).
+ *   - Inputs are disabled during submission (editable={!isSubmitting}).
+ *   - Client-side validation: email format, password 8+ chars, confirm match.
+ *   - Errors (local validation + server) are cleared on every keystroke.
+ *   - Submit button is disabled when fields are empty or submission is in-flight.
+ *   - Uses isSubmitting (not isLoading) for button state.
+ *   - Zero console.log/warn/error statements.
+ */
+
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -27,6 +43,18 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
   const [confirmPassword, setConfirmPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // Refs for stable error clearing
+  const errorRef = useRef(error);
+  errorRef.current = error;
+  const clearErrorRef = useRef(clearError);
+  clearErrorRef.current = clearError;
+  const localErrorRef = useRef(localError);
+  localErrorRef.current = localError;
+
+  // TextInput refs for keyboard navigation
+  const passwordRef = useRef<TextInput>(null);
+  const confirmPasswordRef = useRef<TextInput>(null);
+
   const displayError = localError || error;
   const canSubmit =
     email.trim().length > 0 &&
@@ -36,29 +64,30 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
 
   /**
    * Clear both local validation errors and context-level API errors
-   * whenever the user modifies any input field.
+   * whenever the user modifies any input field. Uses refs so this
+   * callback has zero dependencies and never causes handler recreation.
    */
-  const clearAllErrors = () => {
-    if (localError) setLocalError(null);
-    if (error) clearError();
-  };
+  const clearAllErrors = useCallback(() => {
+    if (localErrorRef.current) setLocalError(null);
+    if (errorRef.current) clearErrorRef.current();
+  }, []);
 
-  const handleEmailChange = (text: string) => {
+  const handleEmailChange = useCallback((text: string) => {
     setEmail(text);
     clearAllErrors();
-  };
+  }, [clearAllErrors]);
 
-  const handlePasswordChange = (text: string) => {
+  const handlePasswordChange = useCallback((text: string) => {
     setPassword(text);
     clearAllErrors();
-  };
+  }, [clearAllErrors]);
 
-  const handleConfirmPasswordChange = (text: string) => {
+  const handleConfirmPasswordChange = useCallback((text: string) => {
     setConfirmPassword(text);
     clearAllErrors();
-  };
+  }, [clearAllErrors]);
 
-  const handleRegister = async () => {
+  const handleRegister = useCallback(async () => {
     clearError();
     setLocalError(null);
 
@@ -90,7 +119,7 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
     } catch {
       // Error is handled by AuthContext and displayed via displayError
     }
-  };
+  }, [email, password, confirmPassword, clearError, register]);
 
   return (
     <View style={styles.container}>
@@ -111,11 +140,15 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
             <View style={styles.cardContent}>
               {/* Header */}
               <Text style={styles.title}>Create account</Text>
-              <Text style={styles.subtitle}>Start writing with Writer</Text>
+              <Text style={styles.subtitle}>Start writing with Inlay</Text>
 
               {/* Error message */}
               {displayError && (
-                <View style={styles.errorContainer}>
+                <View
+                  style={styles.errorContainer}
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                >
                   <Text style={styles.errorText}>{displayError}</Text>
                 </View>
               )}
@@ -135,6 +168,10 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
                   textContentType="emailAddress"
                   autoComplete="email"
                   editable={!isSubmitting}
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                  accessibilityLabel="Email address"
+                  accessibilityHint="Enter your email address"
                 />
               </View>
 
@@ -142,6 +179,7 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Password</Text>
                 <TextInput
+                  ref={passwordRef}
                   style={styles.input}
                   value={password}
                   onChangeText={handlePasswordChange}
@@ -151,6 +189,10 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
                   textContentType="newPassword"
                   autoComplete="new-password"
                   editable={!isSubmitting}
+                  returnKeyType="next"
+                  onSubmitEditing={() => confirmPasswordRef.current?.focus()}
+                  accessibilityLabel="Password"
+                  accessibilityHint="Create a password, minimum 8 characters"
                 />
               </View>
 
@@ -158,6 +200,7 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Confirm password</Text>
                 <TextInput
+                  ref={confirmPasswordRef}
                   style={styles.input}
                   value={confirmPassword}
                   onChangeText={handleConfirmPasswordChange}
@@ -167,15 +210,22 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
                   textContentType="newPassword"
                   autoComplete="new-password"
                   editable={!isSubmitting}
+                  returnKeyType="done"
+                  onSubmitEditing={handleRegister}
+                  accessibilityLabel="Confirm password"
+                  accessibilityHint="Re-enter your password to confirm"
                 />
               </View>
 
-              {/* Submit button -- disabled when fields are empty or during submission */}
+              {/* Submit button -- disabled when fields are empty or submitting */}
               <TouchableOpacity
                 style={[styles.button, !canSubmit && styles.buttonDisabled]}
                 onPress={handleRegister}
                 disabled={!canSubmit}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Create account"
+                accessibilityState={{ disabled: !canSubmit }}
               >
                 {isSubmitting ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
@@ -189,9 +239,12 @@ export default function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps)
                 style={styles.switchButton}
                 onPress={onSwitchToLogin}
                 activeOpacity={0.6}
+                accessibilityRole="button"
+                accessibilityLabel="Switch to sign in"
               >
                 <Text style={styles.switchText}>
-                  Already have an account? <Text style={styles.switchLink}>Sign in</Text>
+                  Already have an account?{' '}
+                  <Text style={styles.switchLink}>Sign in</Text>
                 </Text>
               </TouchableOpacity>
             </View>
@@ -239,13 +292,21 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
     marginBottom: 6,
     letterSpacing: -0.5,
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontFamily: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'sans-serif',
+    }),
   },
   subtitle: {
     fontSize: 14,
     color: 'rgba(0,0,0,0.45)',
     marginBottom: 28,
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontFamily: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'sans-serif',
+    }),
   },
   errorContainer: {
     backgroundColor: 'rgba(255, 59, 48, 0.12)',
@@ -258,7 +319,11 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#D32F2F',
     fontSize: 13,
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontFamily: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'sans-serif',
+    }),
   },
   fieldGroup: {
     marginBottom: 18,
@@ -269,7 +334,11 @@ const styles = StyleSheet.create({
     color: 'rgba(0,0,0,0.5)',
     marginBottom: 6,
     letterSpacing: 0.3,
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontFamily: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'sans-serif',
+    }),
   },
   input: {
     backgroundColor: 'rgba(255,255,255,0.5)',
@@ -279,7 +348,11 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: 16,
     color: '#1C1C1E',
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontFamily: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'sans-serif',
+    }),
   },
   button: {
     backgroundColor: '#1C1C1E',
@@ -297,7 +370,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontFamily: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'sans-serif',
+    }),
   },
   switchButton: {
     marginTop: 24,
@@ -306,7 +383,11 @@ const styles = StyleSheet.create({
   switchText: {
     fontSize: 14,
     color: 'rgba(0,0,0,0.45)',
-    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+    fontFamily: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'sans-serif',
+    }),
   },
   switchLink: {
     color: '#1C1C1E',

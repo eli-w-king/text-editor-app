@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Document Sync API provides cloud storage and synchronization for the Writer (Inlay) note-taking app. Documents are stored in Cloudflare R2 and accessed through a Cloudflare Worker.
+The Document Sync API provides cloud storage and synchronization for the Inlay note-taking app. Documents are stored in Cloudflare R2 and accessed through a Cloudflare Worker.
 
 | Property | Value |
 |---|---|

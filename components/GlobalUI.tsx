@@ -56,7 +56,7 @@ export default function GlobalUI() {
           },
           {
             text: 'Save & Connect',
-            onPress: (key) => saveApiKey(key || ''),
+            onPress: (key: string | undefined) => saveApiKey(key || ''),
           },
         ],
         'secure-text',

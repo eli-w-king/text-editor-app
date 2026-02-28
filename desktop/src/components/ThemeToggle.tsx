@@ -1,4 +1,5 @@
-import type { Theme } from '@/styles/design-system';
+import { useState, useCallback } from 'react';
+import { Colors, type Theme } from '../styles/design-system';
 
 interface ThemeToggleProps {
   theme: Theme;
@@ -7,21 +8,53 @@ interface ThemeToggleProps {
 
 /**
  * Theme toggle button -- mirrors the FloatingMenu's theme switching.
- * Shows a sun/moon icon inside a frosted pill.
+ * Shows a sun/moon icon inside a frosted glass circle.
+ *
+ * Uses design-system Colors directly instead of CSS custom properties
+ * for reliable rendering regardless of CSS context.
  */
 export default function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
   const isDark = theme === 'dark';
+  const colors = Colors[theme];
+
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
+
+  const handleMouseEnter = useCallback(() => setIsHovered(true), []);
+  const handleMouseLeave = useCallback(() => { setIsHovered(false); setIsPressed(false); }, []);
+  const handleMouseDown = useCallback(() => setIsPressed(true), []);
+  const handleMouseUp = useCallback(() => setIsPressed(false), []);
+
+  const bgOpacity = isPressed ? 0.15 : isHovered ? 0.12 : isDark ? 0.07 : 0.35;
+  const scale = isPressed ? 0.98 : isHovered ? 1.05 : 1;
 
   return (
     <button
       onClick={onToggle}
-      className="relative flex items-center justify-center w-10 h-10 rounded-full cursor-pointer transition-smooth"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
       style={{
-        background: 'var(--glass)',
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 40,
+        height: 40,
+        borderRadius: 9999,
+        cursor: 'pointer',
+        background: `rgba(255, 255, 255, ${bgOpacity})`,
         backdropFilter: 'blur(40px)',
         WebkitBackdropFilter: 'blur(40px)',
-        border: '1px solid var(--border)',
-        color: 'var(--text)',
+        border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'}`,
+        color: colors.text,
+        boxShadow: `0 2px 16px rgba(0, 0, 0, ${isDark ? 0.3 : 0.08}), inset 0 0 0 0.5px rgba(255, 255, 255, ${isDark ? 0.06 : 0.4})`,
+        transition: 'all 300ms ease-out',
+        transform: `scale(${scale})`,
+        appearance: 'none' as const,
+        padding: 0,
+        outline: 'none',
       }}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -41,7 +74,7 @@ export default function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
           position: 'absolute',
           opacity: isDark ? 0 : 1,
           transform: isDark ? 'rotate(-90deg) scale(0)' : 'rotate(0) scale(1)',
-          transition: 'all 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: 'opacity 300ms ease-out, transform 300ms ease-out',
         }}
       >
         <circle cx="12" cy="12" r="5" />
@@ -70,7 +103,7 @@ export default function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
           position: 'absolute',
           opacity: isDark ? 1 : 0,
           transform: isDark ? 'rotate(0) scale(1)' : 'rotate(90deg) scale(0)',
-          transition: 'all 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: 'opacity 300ms ease-out, transform 300ms ease-out',
         }}
       >
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />

@@ -86,22 +86,6 @@ export default function FormattingToolbar({ editorRef, theme = 'light', visible 
   }, [visible, translateY]);
 
   /**
-   * Dispatches the formatting action to the RichEditor.
-   * Link insertion is handled separately via handleLink() which shows
-   * a platform-specific URL prompt.
-   */
-  const handleAction = useCallback((button) => {
-    if (!editorRef?.current) return;
-
-    if (button.special === 'link') {
-      handleLink();
-      return;
-    }
-
-    editorRef.current.sendAction(button.action, 'result');
-  }, [editorRef]);
-
-  /**
    * Insert a link with a platform-specific prompt.
    *
    * iOS: Uses Alert.prompt for a native text input dialog.
@@ -109,6 +93,9 @@ export default function FormattingToolbar({ editorRef, theme = 'light', visible 
    * Alert.prompt is iOS-only.
    *
    * Automatically prefixes "https://" if the user omits the protocol.
+   *
+   * Defined before handleAction so it can be included in handleAction's
+   * dependency array without violating the rules-of-hooks ordering.
    */
   const handleLink = useCallback(() => {
     if (!editorRef?.current) return;
@@ -139,12 +126,28 @@ export default function FormattingToolbar({ editorRef, theme = 'light', visible 
     }
   }, [editorRef]);
 
+  /**
+   * Dispatches the formatting action to the RichEditor.
+   * Link insertion is handled separately via handleLink() which shows
+   * a platform-specific URL prompt.
+   */
+  const handleAction = useCallback((button) => {
+    if (!editorRef?.current) return;
+
+    if (button.special === 'link') {
+      handleLink();
+      return;
+    }
+
+    editorRef.current.sendAction(button.action, 'result');
+  }, [editorRef, handleLink]);
+
   // Theme-dependent colors matching the app's frosted glass aesthetic.
   // Values align with FloatingMenu.tsx getThemeColors().
   const bgColor = isDark ? 'rgba(40,40,42,0.5)' : 'rgba(255,255,255,0.3)';
   const iconColor = isDark ? '#ECEDEE' : '#1C1C1E';
-  const borderColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
   const dividerColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
+  const borderColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
 
   return (
     <Animated.View

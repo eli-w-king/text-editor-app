@@ -131,11 +131,12 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
+  // Disable submit when fields are empty or a request is in-flight.
   const canSubmit = email.trim().length > 0 && password.length > 0 && !isSubmitting;
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
-    // Clear errors when user starts typing
+    // Clear errors when user starts typing so stale error banners dismiss.
     if (error) clearError();
   };
 
@@ -150,11 +151,12 @@ export default function Login() {
 
     if (!email.trim() || !password) return;
 
-    try {
-      await login(email.trim(), password);
+    // Desktop AuthContext.login() returns true on success, false on failure.
+    // It does NOT throw -- errors are captured in context state and displayed
+    // via the {error && ...} banner. Only navigate on success.
+    const success = await login(email.trim(), password);
+    if (success) {
       navigate('/');
-    } catch {
-      // Error is handled by AuthContext and displayed via error state
     }
   };
 
@@ -167,7 +169,7 @@ export default function Login() {
     <div style={pageStyle}>
       <div style={cardStyle}>
         <h1 style={titleStyle}>Welcome back</h1>
-        <p style={subtitleStyle}>Sign in to your Writer account</p>
+        <p style={subtitleStyle}>Sign in to your Inlay account</p>
 
         {error && <div style={errorStyle}>{error}</div>}
 

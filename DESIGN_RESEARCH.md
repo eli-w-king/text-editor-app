@@ -401,7 +401,7 @@ Based on the Pinterest board's direction and the existing app's design language 
 - Single device
 - Basic export (plain text, Markdown)
 
-#### Pro Tier: "Writer Pro" -- $4.99/month or $39.99/year
+#### Pro Tier: "Writer Pro" -- $5/month or $48/year
 - Everything in Free
 - Unlimited AI completions
 - Advanced AI features:
@@ -417,7 +417,7 @@ Based on the Pinterest board's direction and the existing app's design language 
 - Document statistics (reading level, word frequency, etc.)
 - Priority support
 
-#### Team Tier: "Writer for Teams" -- $8.99/user/month
+#### Team Tier: "Writer for Teams" -- $12/user/month
 - Everything in Pro
 - Real-time collaborative editing
 - Shared workspaces
@@ -440,7 +440,7 @@ Based on the Pinterest board's direction and the existing app's design language 
 #### Cost Considerations
 - OpenRouter API costs: ~$0.002-0.01 per AI completion (model dependent)
 - At 50 completions/day (power user): ~$0.25-1.25/day = $7.50-37.50/month
-- Pro at $4.99/month REQUIRES usage limits or cheaper models for profitability
+- Pro at $5/month REQUIRES usage limits or cheaper models for profitability
 - Recommendation: Use efficient models (Gemini Flash, Llama) for standard tier, premium models (GPT-4o, Claude) as Pro+ perk
 
 ### 6.3 Alternative/Complementary Revenue Streams

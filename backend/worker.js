@@ -53,7 +53,7 @@ async function proxyToOpenRouter(request, env, path) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': 'https://writer.app', // Your app's URL
-      'X-Title': 'Writer App',
+      'X-Title': 'Inlay App',
     },
     body: body,
   });

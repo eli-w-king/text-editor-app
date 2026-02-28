@@ -1,6 +1,6 @@
-# Writer
+# Inlay
 
-A minimal, AI-powered note-taking app for iOS built with React Native and Expo. Writer uses intelligent inline autocomplete to help you write faster—just type `/` to mark blanks and `//` to fill them with context-aware suggestions.
+A minimal, AI-powered note-taking app for iOS built with React Native and Expo. Inlay uses intelligent inline autocomplete to help you write faster—just type `/` to mark blanks and `//` to fill them with context-aware suggestions.
 
 ## Features
 
@@ -63,7 +63,7 @@ npm start
 
 ### API Configuration
 
-Writer uses [OpenRouter](https://openrouter.ai) for AI completions. 
+Inlay uses [OpenRouter](https://openrouter.ai) for AI completions. 
 
 **First, create your config file:**
 ```bash

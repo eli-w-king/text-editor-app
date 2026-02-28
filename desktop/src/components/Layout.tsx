@@ -1,82 +1,147 @@
-import { Outlet } from 'react-router-dom';
-import { useTheme } from '@/hooks/useTheme';
-import WatercolorBackground from '@/components/WatercolorBackground';
-import ThemeToggle from '@/components/ThemeToggle';
+import { Outlet, Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../hooks/useTheme';
+import WatercolorBackground from './WatercolorBackground';
+import ThemeToggle from './ThemeToggle';
+import { Colors, Fonts, Transitions } from '../styles/design-system';
 
 /**
- * Responsive layout shell -- works from 320px to 2560px wide.
+ * Layout shell for authenticated pages.
  *
  * Mirrors the mobile app's layered architecture:
- *   1. Background color (Colors[theme].background)
- *   2. Watercolor dot layer
- *   3. Heavy blur layer (100px + 60px blur on mobile)
- *   4. Content layer
+ *   1. Background color
+ *   2. Watercolor ambient layer
+ *   3. Heavy blur layer
+ *   4. Floating glass nav bar
+ *   5. Content area
  *
- * On desktop we achieve the same frosted look with:
- *   - A canvas-drawn watercolor background
- *   - A full-screen backdrop-blur overlay
- *   - Content rendered on top
+ * On desktop we replicate the frosted glass look with CSS
+ * backdrop-filter: blur() and semi-transparent backgrounds.
  */
 export default function Layout() {
   const { theme, toggleTheme } = useTheme();
+  const { isAuthenticated, isLoading } = useAuth();
+  const colors = Colors[theme];
+
+  // Loading state -- show a themed spinner while checking auth
+  if (isLoading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: colors.background,
+        }}
+      >
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            border: `2px solid ${colors.border}`,
+            borderTopColor: colors.textMuted,
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Auth guard -- redirect unauthenticated users
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
 
   return (
     <div
       data-theme={theme}
-      className="min-h-screen relative"
-      style={{ backgroundColor: 'var(--bg)' }}
+      style={{
+        minHeight: '100vh',
+        position: 'relative',
+        backgroundColor: colors.background,
+        transition: `background-color ${Transitions.slow} ${Transitions.easeSmooth}`,
+      }}
     >
-      {/* Layer 1: Watercolor ambient dots */}
+      {/* Layer 1: Watercolor ambient background */}
       <WatercolorBackground />
 
-      {/* Layer 2: Frosted glass blur overlay -- replicates the double BlurView */}
+      {/* Layer 2: Frosted glass blur overlay */}
       <div
-        className="fixed inset-0 pointer-events-none"
         style={{
-          backdropFilter: 'blur(80px)',
-          WebkitBackdropFilter: 'blur(80px)',
+          position: 'fixed',
+          inset: 0,
+          backdropFilter: 'blur(120px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(120px) saturate(180%)',
+          background: theme === 'dark'
+            ? 'rgba(10, 10, 14, 0.4)'
+            : 'rgba(240, 239, 237, 0.3)',
           zIndex: 1,
+          pointerEvents: 'none',
         }}
         aria-hidden="true"
       />
 
-      {/* Layer 3: Content */}
-      <div className="relative flex flex-col min-h-screen" style={{ zIndex: 2 }}>
-        {/* Top navigation bar */}
-        <header className="sticky top-0 z-50">
-          {/* Tiered blur header -- matches mobile's layered BlurView header */}
-          <div
-            className="absolute inset-x-0 top-0 h-20 pointer-events-none"
+      {/* Layer 3: Content with floating nav */}
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', minHeight: '100vh', zIndex: 2 }}>
+        {/* Floating glass nav bar */}
+        <header style={{ position: 'sticky', top: 0, zIndex: 50, pointerEvents: 'none' }}>
+          <nav
             style={{
-              backdropFilter: 'blur(30px)',
-              WebkitBackdropFilter: 'blur(30px)',
-              maskImage: 'linear-gradient(to bottom, black 60%, transparent)',
-              WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              maxWidth: 680,
+              margin: '16px auto 0',
+              padding: '10px 20px',
+              borderRadius: 22,
+              background: theme === 'dark'
+                ? 'rgba(255, 255, 255, 0.04)'
+                : 'rgba(255, 255, 255, 0.5)',
+              backdropFilter: 'blur(80px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(80px) saturate(180%)',
+              border: `1px solid ${theme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.6)'}`,
+              boxShadow: theme === 'dark'
+                ? '0 8px 40px rgba(0, 0, 0, 0.4), inset 0 0.5px 0 rgba(255, 255, 255, 0.06)'
+                : '0 8px 40px rgba(0, 0, 0, 0.06), inset 0 0.5px 0 rgba(255, 255, 255, 0.8)',
+              pointerEvents: 'auto',
+              transition: `all ${Transitions.slow} ${Transitions.easeSmooth}`,
             }}
-            aria-hidden="true"
-          />
-          <nav className="relative flex items-center justify-between px-5 py-4 max-w-screen-2xl mx-auto">
-            {/* Logo / app name */}
+          >
+            {/* Logo */}
             <a
               href="/"
-              className="text-lg font-medium tracking-wide no-underline"
               style={{
-                color: 'var(--text)',
-                fontFamily: "'Lora', Georgia, serif",
+                color: colors.text,
+                fontFamily: Fonts.serif,
+                fontSize: 19,
+                fontWeight: 400,
+                textDecoration: 'none',
+                opacity: 0.9,
+                letterSpacing: '-0.2px',
               }}
             >
-              Writer
+              Inlay
             </a>
 
             {/* Nav actions */}
-            <div className="flex items-center gap-3">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <ThemeToggle theme={theme} onToggle={toggleTheme} />
             </div>
           </nav>
         </header>
 
-        {/* Main content area -- responsive container */}
-        <main className="flex-1 w-full max-w-screen-2xl mx-auto px-5 pb-12">
+        {/* Main content area */}
+        <main
+          style={{
+            flex: 1,
+            width: '100%',
+            maxWidth: 760,
+            margin: '0 auto',
+            padding: '24px 20px 48px',
+          }}
+        >
           <Outlet />
         </main>
       </div>

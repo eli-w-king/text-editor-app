@@ -1,5 +1,29 @@
 import { useEffect, useRef, useMemo } from 'react';
-import { colorFamilies, getRandomColorFamily, type ColorFamilyName } from '@/styles/design-system';
+
+/**
+ * Ambient watercolor background -- mirrors the mobile app's
+ * color dot system from App.js. The mobile version renders
+ * overlapping circles with random offsets and applies two
+ * heavy BlurView layers (intensity 100 + 60) on top, creating
+ * soft glowing orbs. On web we replicate this by drawing
+ * pre-blurred radial gradients onto a canvas.
+ *
+ * Self-contained -- no dependency on design-system.ts exports.
+ * Uses a muted palette of 8 colors drawn as soft radial gradients
+ * at very low opacity (0.03-0.08) for an ambient effect.
+ */
+
+// Muted palette for ambient orbs (works in both light and dark themes)
+const PALETTE = [
+  '#C4B8D8', // soft lavender
+  '#D4A5A5', // pale rose
+  '#A8C5A0', // muted sage
+  '#E8D5B7', // warm cream
+  '#B8C8D8', // steel blue mist
+  '#D8C4D8', // dusty mauve
+  '#8B7355', // warm umber
+  '#7A9E7E', // forest sage
+];
 
 interface WatercolorDot {
   x: number;
@@ -12,22 +36,15 @@ interface WatercolorDot {
   rotation: number;
 }
 
-/**
- * Ambient watercolor background -- mirrors the mobile app's
- * color dot system from App.js. The mobile version renders
- * overlapping circles with random offsets and applies two
- * heavy BlurView layers (intensity 100 + 60) on top, creating
- * soft glowing orbs. On web we replicate this by drawing
- * pre-blurred radial gradients onto a canvas.
- */
 export default function WatercolorBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>(0);
 
   // Generate a stable set of dots on mount
   const dots = useMemo(() => generateDots(8), []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -49,15 +66,18 @@ export default function WatercolorBackground() {
 
     return () => {
       window.removeEventListener('resize', resize);
-      cancelAnimationFrame(animationRef.current);
     };
   }, [dots]);
 
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 0 }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: 'none',
+      }}
       aria-hidden="true"
     />
   );
@@ -65,18 +85,15 @@ export default function WatercolorBackground() {
 
 function generateDots(count: number): WatercolorDot[] {
   const dots: WatercolorDot[] = [];
-  const family: ColorFamilyName = getRandomColorFamily();
-  const familyColors = colorFamilies[family];
 
   for (let i = 0; i < count; i++) {
-    // Mirroring App.js blotShapes generation
-    const color = familyColors[Math.floor(Math.random() * familyColors.length)];
+    const color = PALETTE[i % PALETTE.length];
     dots.push({
       x: Math.random(),
       y: Math.random(),
-      size: 120 + Math.random() * 200, // 120-320px
+      size: 120 + Math.random() * 200,
       color,
-      opacity: 0.04 + Math.random() * 0.08, // Very subtle, 0.04-0.12
+      opacity: 0.03 + Math.random() * 0.05, // Very subtle: 0.03-0.08
       scaleX: 0.6 + Math.random() * 0.8,
       scaleY: 0.6 + Math.random() * 0.8,
       rotation: Math.random() * Math.PI * 2,

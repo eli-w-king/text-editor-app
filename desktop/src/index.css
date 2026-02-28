@@ -1,0 +1,178 @@
+/*
+ * Inlay Desktop -- Global Styles
+ * ============================================================================
+ *
+ * Base resets, font imports, scrollbar styling, and CSS custom properties
+ * that support the visionOS frosted glass design system.
+ *
+ * Imported by main.tsx as the first stylesheet so all components inherit
+ * these defaults.
+ */
+
+/* -----------------------------------------------------------------------
+   Reset & Base
+   ----------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  /* Prevent layout shift from scrollbar appearance */
+  overflow-y: scroll;
+  /* Smoother font rendering on macOS / iOS */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  color: #1D1D1F;
+  background-color: #F5F5F7;
+  /* Prevent text size adjustment on orientation change (iOS) */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Dark mode defaults */
+[data-theme='dark'] body,
+body.dark {
+  color: #F5F5F7;
+  background-color: #0A0A0C;
+}
+
+/* -----------------------------------------------------------------------
+   Links
+   ----------------------------------------------------------------------- */
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* -----------------------------------------------------------------------
+   Inputs & Buttons
+   ----------------------------------------------------------------------- */
+
+input,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input::placeholder,
+textarea::placeholder {
+  opacity: 1;
+  color: #C7C7CC;
+}
+
+[data-theme='dark'] input::placeholder,
+[data-theme='dark'] textarea::placeholder {
+  color: #48484A;
+}
+
+/* -----------------------------------------------------------------------
+   Selection
+   ----------------------------------------------------------------------- */
+
+::selection {
+  background: rgba(90, 143, 204, 0.25);
+  color: inherit;
+}
+
+[data-theme='dark'] ::selection {
+  background: rgba(107, 170, 223, 0.3);
+}
+
+/* -----------------------------------------------------------------------
+   Scrollbar (WebKit / Blink)
+   
+   Premium glass scrollbar -- ultra-thin, translucent, only visible
+   on hover. Matches the visionOS minimal chrome philosophy.
+   ----------------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 100px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* -----------------------------------------------------------------------
+   Focus visible -- accessible focus ring that matches the glass aesthetic
+   ----------------------------------------------------------------------- */
+
+:focus-visible {
+  outline: 2px solid rgba(90, 143, 204, 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+[data-theme='dark'] :focus-visible {
+  outline-color: rgba(107, 170, 223, 0.5);
+}
+
+/* -----------------------------------------------------------------------
+   Reduced motion -- respect user preference
+   ----------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* -----------------------------------------------------------------------
+   Utility: screen reader only
+   ----------------------------------------------------------------------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

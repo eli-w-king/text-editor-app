@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -26,16 +26,42 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = async () => {
-    clearError();
+  // Use refs for error/clearError inside useCallback so the input handlers
+  // have stable identity and do not cause unnecessary TextInput re-renders.
+  const errorRef = useRef(error);
+  errorRef.current = error;
+  const clearErrorRef = useRef(clearError);
+  clearErrorRef.current = clearError;
+
+  const passwordRef = useRef<TextInput>(null);
+
+  // Disable the button when fields are empty or a request is in-flight.
+  const canSubmit = email.trim().length > 0 && password.length > 0 && !isSubmitting;
+
+  // Clear context errors when the user starts editing fields.
+  // This prevents stale errors from persisting after correcting input.
+  const handleEmailChange = useCallback((text: string) => {
+    setEmail(text);
+    if (errorRef.current) clearErrorRef.current();
+  }, []);
+
+  const handlePasswordChange = useCallback((text: string) => {
+    setPassword(text);
+    if (errorRef.current) clearErrorRef.current();
+  }, []);
+
+  const handleLogin = useCallback(async () => {
+    if (errorRef.current) clearErrorRef.current();
     if (!email.trim() || !password) return;
 
     try {
       await login(email.trim(), password);
     } catch {
-      // Error is handled by AuthContext
+      // Error is set in AuthContext state and displayed via the {error && ...}
+      // banner below. The context re-throws so we catch here to prevent an
+      // unhandled promise rejection.
     }
-  };
+  }, [email, password, login]);
 
   return (
     <View style={styles.container}>
@@ -56,11 +82,16 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
             <View style={styles.cardContent}>
               {/* Header */}
               <Text style={styles.title}>Welcome back</Text>
-              <Text style={styles.subtitle}>Sign in to your Writer account</Text>
+              <Text style={styles.subtitle}>Sign in to your Inlay account</Text>
 
-              {/* Error message */}
+              {/* Error message -- displays errors from AuthContext (network,
+                  server, or validation errors). Clears when user edits a field. */}
               {error && (
-                <View style={styles.errorContainer}>
+                <View
+                  style={styles.errorContainer}
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="assertive"
+                >
                   <Text style={styles.errorText}>{error}</Text>
                 </View>
               )}
@@ -71,7 +102,7 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
                 <TextInput
                   style={styles.input}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={handleEmailChange}
                   placeholder="you@example.com"
                   placeholderTextColor="rgba(0,0,0,0.3)"
                   autoCapitalize="none"
@@ -79,6 +110,9 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
                   keyboardType="email-address"
                   textContentType="emailAddress"
                   autoComplete="email"
+                  editable={!isSubmitting}
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
                 />
               </View>
 
@@ -86,23 +120,30 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>Password</Text>
                 <TextInput
+                  ref={passwordRef}
                   style={styles.input}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handlePasswordChange}
                   placeholder="Enter your password"
                   placeholderTextColor="rgba(0,0,0,0.3)"
                   secureTextEntry
                   textContentType="password"
                   autoComplete="current-password"
+                  editable={!isSubmitting}
+                  returnKeyType="go"
+                  onSubmitEditing={handleLogin}
                 />
               </View>
 
-              {/* Submit button */}
+              {/* Submit button -- disabled when fields empty or during submission */}
               <TouchableOpacity
-                style={[styles.button, isSubmitting && styles.buttonDisabled]}
+                style={[styles.button, !canSubmit && styles.buttonDisabled]}
                 onPress={handleLogin}
-                disabled={isSubmitting}
+                disabled={!canSubmit}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in"
+                accessibilityState={{ disabled: !canSubmit }}
               >
                 {isSubmitting ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
@@ -145,7 +186,6 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     borderRadius: 20,
     overflow: 'hidden',
-    // Shadow for card depth
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,

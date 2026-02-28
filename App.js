@@ -45,7 +45,7 @@ const makeApiCall = async (endpoint, body, apiKey) => {
     ...(usingProxy ? {} : {
       'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
-      'X-Title': 'Writer App',
+      'X-Title': 'Inlay App',
     }),
   };
   
@@ -318,70 +318,88 @@ const generateImageWithGemini = async (query) => {
 
 // Ambient image loading shimmer component
 function ImageLoadingShimmer({ theme }) {
-  const pulseAnim = useRef(new Animated.Value(0)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
     const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ])
-    );
-    const glow = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, { toValue: 1, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(glowAnim, { toValue: 0, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.7, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ])
     );
     pulse.start();
-    glow.start();
-    return () => { pulse.stop(); glow.stop(); };
+    return () => pulse.stop();
   }, []);
 
-  const opacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
-  const glowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.0, 0.6] });
-
   const isDark = theme === 'dark';
-  const bgColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.09)';
-  const gradientColors = isDark
-    ? ['rgba(255,255,255,0.0)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.0)']
-    : ['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0.0)'];
-  const glowColors = isDark
-    ? ['rgba(120,140,255,0.0)', 'rgba(120,140,255,0.12)', 'rgba(120,140,255,0.0)']
-    : ['rgba(80,100,180,0.0)', 'rgba(80,100,180,0.16)', 'rgba(80,100,180,0.0)'];
 
   return (
-    <View style={{
-      height: 220,
+    <Animated.View style={{
+      height: 180,
       marginVertical: 12,
       marginHorizontal: 24,
       borderRadius: 12,
-      overflow: 'hidden',
-      backgroundColor: bgColor,
+      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+      opacity: pulseAnim,
+      justifyContent: 'center',
+      alignItems: 'center',
     }}>
-      <Animated.View style={{ ...StyleSheet.absoluteFillObject, opacity }}>
-        <LinearGradient
-          colors={gradientColors}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
-      <Animated.View style={{ ...StyleSheet.absoluteFillObject, opacity: glowOpacity }}>
-        <LinearGradient
-          colors={glowColors}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
-      <BlurView
-        intensity={40}
-        tint={isDark ? 'dark' : 'light'}
-        style={StyleSheet.absoluteFill}
-      />
-    </View>
+      <Text style={{ color: isDark ? '#555' : '#bbb', fontSize: 13 }}>
+        Finding image...
+      </Text>
+    </Animated.View>
+  );
+}
+
+// Image block with error fallback and long-press to delete
+function ImageBlock({ uri, alt, theme, onRemove }) {
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onLongPress={() => {
+        Alert.alert(
+          'Remove Image',
+          'Remove this image from the note?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: onRemove,
+            },
+          ]
+        );
+      }}
+    >
+      <View style={styles.imageBlock}>
+        {hasError ? (
+          <View style={[styles.imageContent, {
+            backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }]}>
+            <Text style={{ color: theme === 'dark' ? '#555' : '#bbb', fontSize: 14 }}>
+              Image could not be loaded
+            </Text>
+          </View>
+        ) : (
+          <ExpoImage
+            source={{ uri }}
+            style={styles.imageContent}
+            contentFit="cover"
+            transition={200}
+            onError={() => setHasError(true)}
+          />
+        )}
+        {alt ? (
+          <Text style={[styles.imageCaption, { color: theme === 'dark' ? '#666' : '#9ca3af' }]}>
+            {alt}
+          </Text>
+        ) : null}
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -426,15 +444,11 @@ function EditorScreen() {
   useEffect(() => {
     if (!isThinking) return;
     
-    // Fluid wave - 2 braille dots with smooth height transitions
-    // ⠁ = top, ⠂ = mid, ⠄ = bottom
-    const waveFrames = [
-      '⠁⠄',
-      '⠁⠂',
-      '⠂⠁',
-      '⠄⠁',
-      '⠄⠂',
-      '⠂⠄',
+    // Minimal pulse - subtle dot progression
+    const pulseFrames = [
+      '\u2024',  // one dot leader (small, subtle)
+      '\u2025',  // two dot leader (slightly more presence)
+      '\u2026',  // ellipsis (full presence)
     ];
     let frameIndex = 0;
     
@@ -456,7 +470,7 @@ function EditorScreen() {
           const spaceBefore = hasSpaceBefore ? '' : ' ';
           const spaceAfter = hasSpaceAfter ? '' : ' ';
           
-          result += before + spaceBefore + waveFrames[frameIndex] + spaceAfter;
+          result += before + spaceBefore + pulseFrames[frameIndex] + spaceAfter;
           lastPos = pos;
         }
         result += thinkingBaseText.slice(lastPos);
@@ -467,13 +481,13 @@ function EditorScreen() {
         const hasSpaceAfter = thinkingSuffix.startsWith(' ');
         const spaceBefore = hasSpaceBefore ? '' : ' ';
         const spaceAfter = hasSpaceAfter ? '' : ' ';
-        setText(thinkingPrefix + spaceBefore + waveFrames[frameIndex] + spaceAfter + thinkingSuffix);
+        setText(thinkingPrefix + spaceBefore + pulseFrames[frameIndex] + spaceAfter + thinkingSuffix);
       }
-      frameIndex = (frameIndex + 1) % waveFrames.length;
+      frameIndex = (frameIndex + 1) % pulseFrames.length;
     };
     
     updatePlaceholder();
-    const interval = setInterval(updatePlaceholder, 100);
+    const interval = setInterval(updatePlaceholder, 220);
     return () => clearInterval(interval);
   }, [isThinking, thinkingPrefix, thinkingSuffix, thinkingPositions, thinkingBaseText]);
   
@@ -1837,15 +1851,16 @@ function EditorScreen() {
                 {contentBlocks.map((block, index) => {
                   if (block.type === 'image') {
                     return (
-                      <View key={`img-${index}`} style={styles.imageBlock}>
-                        <ExpoImage
-                          source={{ uri: block.uri }}
-                          style={styles.imageContent}
-                          contentFit="cover"
-                          transition={200}
-                          onError={() => console.log('Image failed to load:', block.uri?.slice(0, 100))}
-                        />
-                      </View>
+                      <ImageBlock
+                        key={`img-${index}`}
+                        uri={block.uri}
+                        alt={block.alt}
+                        theme={theme}
+                        onRemove={() => {
+                          const marker = `[IMG||${block.uri}||${block.alt}]`;
+                          setText(prev => prev.replace(marker, ''));
+                        }}
+                      />
                     );
                   }
                   if (block.type === 'image_loading') {

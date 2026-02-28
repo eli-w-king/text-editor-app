@@ -277,7 +277,7 @@ export default function NoteEditor() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
           'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
-          'X-Title': 'Writer App',
+          'X-Title': 'Inlay App',
         },
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash-lite-preview-09-2025',
@@ -460,7 +460,7 @@ export default function NoteEditor() {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${apiKey}`,
               'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
-              'X-Title': 'Writer App',
+              'X-Title': 'Inlay App',
             },
             body: JSON.stringify({
               model: 'google/gemini-2.5-flash-lite-preview-09-2025',
@@ -538,7 +538,7 @@ export default function NoteEditor() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
           'HTTP-Referer': 'https://github.com/elijahking/text-editor-app',
-          'X-Title': 'Writer App',
+          'X-Title': 'Inlay App',
         },
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash-lite-preview-09-2025',

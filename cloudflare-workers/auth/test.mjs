@@ -4,6 +4,16 @@
  *
  * This tests the pure utility functions extracted from worker.js.
  * It does NOT test KV or the full request/response cycle (that requires wrangler dev).
+ *
+ * Covers:
+ * - UUID generation
+ * - Email/password validation (including length bounds)
+ * - timingSafeEqual constant-time comparison
+ * - Password hashing with PBKDF2-SHA256
+ * - JWT creation, verification, expiration
+ * - JWT algorithm validation (prevents alg:none attack)
+ * - CORS origin allowlist validation and function behavior
+ * - Base64url encoding/decoding
  */
 
 // We cannot directly import from worker.js in Node without a Cloudflare Workers runtime,
@@ -15,6 +25,47 @@ const { subtle } = globalThis.crypto;
 const MAX_EMAIL_LENGTH = 254;
 const MAX_PASSWORD_LENGTH = 128;
 const MIN_PASSWORD_LENGTH = 8;
+
+// CORS origins -- must match the ALLOWED_ORIGINS array in worker.js
+const ALLOWED_ORIGINS = [
+  'http://localhost:8081',
+  'http://localhost:19006',
+  'http://localhost:3000',
+  'https://inlaynoteapp.com',
+  'https://app.inlaynoteapp.com',
+  'https://www.inlaynoteapp.com',
+];
+
+// -- CORS function -- mirrors worker.js corsHeaders() exactly
+function corsHeaders(request) {
+  const origin = request.headers.get('Origin');
+  const headers = {
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Max-Age': '86400',
+  };
+
+  if (!origin) {
+    headers['Access-Control-Allow-Origin'] = 'null';
+  } else if (ALLOWED_ORIGINS.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  // If origin is present but not in allowlist, omit the header entirely.
+
+  return headers;
+}
+
+function mockRequest(origin) {
+  return {
+    headers: {
+      get(name) {
+        if (name === 'Origin') return origin;
+        return null;
+      },
+    },
+  };
+}
 
 // -- Base64 utilities --
 function arrayBufferToBase64(buffer) {
@@ -85,7 +136,7 @@ async function verifyPassword(password, storedHash, storedSalt) {
   return timingSafeEqual(computedHash, storedHash);
 }
 
-// -- timingSafeEqual (updated: pads shorter string, always full loop) --
+// -- timingSafeEqual --
 function timingSafeEqual(a, b) {
   const maxLen = Math.max(a.length, b.length);
   let lengthMismatch = a.length !== b.length ? 1 : 0;
@@ -129,12 +180,40 @@ async function createJWT(payload, secret) {
   return `${signingInput}.${encodedSignature}`;
 }
 
+/**
+ * Create a JWT with a custom header object (for algorithm validation tests).
+ */
+async function createJWTWithHeader(headerObj, payload, secret) {
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload = { ...payload, iat: now, exp: now + 7 * 24 * 60 * 60 };
+  const encodedHeader = base64urlEncode(JSON.stringify(headerObj));
+  const encodedPayload = base64urlEncode(JSON.stringify(fullPayload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const key = await getSigningKey(secret);
+  const signature = await subtle.sign('HMAC', key, new TextEncoder().encode(signingInput));
+  const encodedSignature = base64urlEncode(String.fromCharCode(...new Uint8Array(signature)));
+  return `${signingInput}.${encodedSignature}`;
+}
+
+/**
+ * verifyJWT -- mirrors worker.js exactly, including algorithm validation.
+ */
 async function verifyJWT(token, secret) {
   try {
     if (!token || typeof token !== 'string') return null;
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const [encodedHeader, encodedPayload, encodedSignature] = parts;
+
+    // Validate algorithm header -- rejects alg:none and any non-HS256
+    let header;
+    try {
+      header = JSON.parse(base64urlDecode(encodedHeader));
+    } catch {
+      return null;
+    }
+    if (!header || header.alg !== 'HS256') return null;
+
     const signingInput = `${encodedHeader}.${encodedPayload}`;
     const key = await getSigningKey(secret);
     const signatureStr = base64urlDecode(encodedSignature);
@@ -153,7 +232,7 @@ async function verifyJWT(token, secret) {
   }
 }
 
-// -- Validation (updated: max length checks) --
+// -- Validation --
 function isValidEmail(email) {
   if (typeof email !== 'string') return false;
   if (email.length > MAX_EMAIL_LENGTH) return false;
@@ -199,7 +278,6 @@ async function runTests() {
   assert(!isValidEmail('user@'), 'Missing domain rejected');
   assert(!isValidEmail(null), 'null rejected');
   assert(!isValidEmail(123), 'number rejected');
-  // Max length checks
   const longLocalPart = 'a'.repeat(240);
   assert(isValidEmail(longLocalPart + '@example.com'), 'Email at 252 chars accepted');
   assert(!isValidEmail(longLocalPart + 'bbbbb@example.com'), 'Email over 254 chars rejected');
@@ -210,7 +288,6 @@ async function runTests() {
   assert(!isValidPassword('1234567'), '7-char password rejected');
   assert(!isValidPassword(''), 'Empty password rejected');
   assert(!isValidPassword(null), 'null rejected');
-  // Max length checks
   assert(isValidPassword('a'.repeat(128)), '128-char password accepted');
   assert(!isValidPassword('a'.repeat(129)), '129-char password rejected');
 
@@ -222,7 +299,6 @@ async function runTests() {
   assert(!timingSafeEqual('', 'a'), 'Empty vs non-empty returns false');
   assert(!timingSafeEqual('a', ''), 'Non-empty vs empty returns false');
   assert(timingSafeEqual('', ''), 'Both empty returns true');
-  // Verify constant-time property: function should not return early
   const longStr = 'x'.repeat(10000);
   assert(timingSafeEqual(longStr, longStr), 'Long identical strings return true');
   assert(!timingSafeEqual(longStr, longStr.slice(0, -1) + 'y'), 'Long strings differing at end return false');
@@ -231,17 +307,12 @@ async function runTests() {
   const { hash, salt } = await hashPassword('mypassword123');
   assert(typeof hash === 'string' && hash.length > 0, 'Hash is a non-empty string');
   assert(typeof salt === 'string' && salt.length > 0, 'Salt is a non-empty string');
-
   const verified = await verifyPassword('mypassword123', hash, salt);
   assert(verified === true, 'Correct password verifies');
-
   const wrongPassword = await verifyPassword('wrongpassword', hash, salt);
   assert(wrongPassword === false, 'Wrong password fails verification');
-
   const emptyPassword = await verifyPassword('', hash, salt);
   assert(emptyPassword === false, 'Empty password fails verification');
-
-  // Different hash each time due to random salt
   const { hash: hash2, salt: salt2 } = await hashPassword('mypassword123');
   assert(hash !== hash2 || salt !== salt2, 'Same password produces different salt/hash');
 
@@ -278,6 +349,139 @@ async function runTests() {
   const emptyResult = await verifyJWT('', secret);
   assert(emptyResult === null, 'Empty string token returns null');
 
+  // -----------------------------------------------------------------------
+  // QA: JWT Algorithm Validation -- prevents 'alg: none' attack (CVE-2015-9235)
+  // -----------------------------------------------------------------------
+  console.log('--- JWT Algorithm Validation (alg:none prevention) ---');
+
+  // alg:none should be rejected even with valid signature
+  const algNoneToken = await createJWTWithHeader(
+    { alg: 'none', typ: 'JWT' },
+    { sub: 'user-123', email: 'test@example.com' },
+    secret,
+  );
+  const algNoneResult = await verifyJWT(algNoneToken, secret);
+  assert(algNoneResult === null, 'Token with alg:none is rejected');
+
+  // alg:HS384 should be rejected (only HS256 is accepted)
+  const algHS384Token = await createJWTWithHeader(
+    { alg: 'HS384', typ: 'JWT' },
+    { sub: 'user-123', email: 'test@example.com' },
+    secret,
+  );
+  const algHS384Result = await verifyJWT(algHS384Token, secret);
+  assert(algHS384Result === null, 'Token with alg:HS384 is rejected');
+
+  // alg:RS256 should be rejected
+  const algRS256Token = await createJWTWithHeader(
+    { alg: 'RS256', typ: 'JWT' },
+    { sub: 'user-123', email: 'test@example.com' },
+    secret,
+  );
+  const algRS256Result = await verifyJWT(algRS256Token, secret);
+  assert(algRS256Result === null, 'Token with alg:RS256 is rejected');
+
+  // Missing alg field entirely should be rejected
+  const noAlgToken = await createJWTWithHeader(
+    { typ: 'JWT' },
+    { sub: 'user-123', email: 'test@example.com' },
+    secret,
+  );
+  const noAlgResult = await verifyJWT(noAlgToken, secret);
+  assert(noAlgResult === null, 'Token with missing alg field is rejected');
+
+  // Correct alg:HS256 should be accepted
+  const hs256Token = await createJWTWithHeader(
+    { alg: 'HS256', typ: 'JWT' },
+    { sub: 'user-123', email: 'test@example.com' },
+    secret,
+  );
+  const hs256Result = await verifyJWT(hs256Token, secret);
+  assert(hs256Result !== null, 'Token with alg:HS256 is accepted');
+  assert(hs256Result.sub === 'user-123', 'HS256 token has correct sub');
+
+  // Corrupted header (non-JSON base64) should be rejected
+  const corruptHeaderToken = base64urlEncode('not-valid-json') + '.' +
+    base64urlEncode(JSON.stringify({ sub: 'user-123' })) + '.fakesig';
+  const corruptHeaderResult = await verifyJWT(corruptHeaderToken, secret);
+  assert(corruptHeaderResult === null, 'Token with non-JSON header is rejected');
+
+  // -----------------------------------------------------------------------
+  // QA: JWT Expiration
+  // -----------------------------------------------------------------------
+  console.log('--- JWT Expiration ---');
+
+  // Create an already-expired token by manually constructing it
+  const expNow = Math.floor(Date.now() / 1000);
+  const expiredPayload = { sub: 'user-123', email: 'test@example.com', iat: expNow - 3600, exp: expNow - 100 };
+  const expHeader = base64urlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const expPayloadEncoded = base64urlEncode(JSON.stringify(expiredPayload));
+  const expSigningInput = `${expHeader}.${expPayloadEncoded}`;
+  const expKey = await getSigningKey(secret);
+  const expSig = await subtle.sign('HMAC', expKey, new TextEncoder().encode(expSigningInput));
+  const expSigEncoded = base64urlEncode(String.fromCharCode(...new Uint8Array(expSig)));
+  const expiredToken = `${expSigningInput}.${expSigEncoded}`;
+  const expiredResult = await verifyJWT(expiredToken, secret);
+  assert(expiredResult === null, 'Expired token (exp in past) is rejected');
+
+  // Token that expires in 1 second from now should still be valid
+  const soonPayload = { sub: 'user-123', email: 'test@example.com', iat: expNow, exp: expNow + 60 };
+  const soonPayloadEncoded = base64urlEncode(JSON.stringify(soonPayload));
+  const soonSigningInput = `${expHeader}.${soonPayloadEncoded}`;
+  const soonSig = await subtle.sign('HMAC', expKey, new TextEncoder().encode(soonSigningInput));
+  const soonSigEncoded = base64urlEncode(String.fromCharCode(...new Uint8Array(soonSig)));
+  const soonToken = `${soonSigningInput}.${soonSigEncoded}`;
+  const soonResult = await verifyJWT(soonToken, secret);
+  assert(soonResult !== null, 'Non-expired token (exp in future) is accepted');
+  assert(soonResult.sub === 'user-123', 'Non-expired token has correct sub');
+
+  // -----------------------------------------------------------------------
+  // QA: CORS Origin Allowlist (no wildcard)
+  // -----------------------------------------------------------------------
+  console.log('--- CORS Origin Allowlist ---');
+  assert(ALLOWED_ORIGINS.length === 6, 'Exactly 6 allowed origins');
+  assert(ALLOWED_ORIGINS.includes('http://localhost:8081'), 'localhost:8081 is allowed');
+  assert(ALLOWED_ORIGINS.includes('http://localhost:19006'), 'localhost:19006 is allowed');
+  assert(ALLOWED_ORIGINS.includes('http://localhost:3000'), 'localhost:3000 is allowed');
+  assert(ALLOWED_ORIGINS.includes('https://inlaynoteapp.com'), 'inlaynoteapp.com is allowed');
+  assert(ALLOWED_ORIGINS.includes('https://app.inlaynoteapp.com'), 'app.inlaynoteapp.com is allowed');
+  assert(ALLOWED_ORIGINS.includes('https://www.inlaynoteapp.com'), 'www.inlaynoteapp.com is allowed');
+  assert(!ALLOWED_ORIGINS.includes('*'), 'No wildcard origin in list');
+
+  // -----------------------------------------------------------------------
+  // QA: CORS Function Behavior (corsHeaders mirrors worker.js)
+  // -----------------------------------------------------------------------
+  console.log('--- CORS Function Behavior ---');
+
+  // Valid origins are reflected back
+  for (const origin of ALLOWED_ORIGINS) {
+    const hdrs = corsHeaders(mockRequest(origin));
+    assert(hdrs['Access-Control-Allow-Origin'] === origin, `corsHeaders reflects ${origin}`);
+  }
+
+  // Unknown/attacker origin: header is omitted entirely (browser blocks)
+  const evilHdrs = corsHeaders(mockRequest('https://evil.com'));
+  assert(!('Access-Control-Allow-Origin' in evilHdrs), 'Unknown origin gets no Access-Control-Allow-Origin header');
+
+  // Null origin (Electron desktop apps) gets 'null'
+  const nullHdrs = corsHeaders(mockRequest(null));
+  assert(nullHdrs['Access-Control-Allow-Origin'] === 'null', "Null origin gets 'null'");
+
+  // Undefined origin (no header at all) gets 'null'
+  const undefHdrs = corsHeaders(mockRequest(undefined));
+  assert(undefHdrs['Access-Control-Allow-Origin'] === 'null', "Undefined origin gets 'null'");
+
+  // Empty string origin gets 'null' (falsy, treated as absent)
+  const emptyOriginHdrs = corsHeaders(mockRequest(''));
+  assert(emptyOriginHdrs['Access-Control-Allow-Origin'] === 'null', "Empty string origin gets 'null'");
+
+  // Credentials header is always present
+  const validHdrs = corsHeaders(mockRequest('http://localhost:3000'));
+  assert(validHdrs['Access-Control-Allow-Credentials'] === 'true', 'CORS includes credentials support');
+
+  // No wildcard in any valid response
+  assert(validHdrs['Access-Control-Allow-Origin'] !== '*', 'No wildcard origin in valid CORS response');
+
   console.log('--- Base64url roundtrip ---');
   const original = JSON.stringify({ hello: 'world', num: 42 });
   const encoded = base64urlEncode(original);
@@ -288,7 +492,7 @@ async function runTests() {
   assert(!encoded.includes('='), 'No = padding in base64url');
 
   // Summary
-  console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
+  console.log('\n=== Results: ' + passed + ' passed, ' + failed + ' failed ===');
   if (failed > 0) {
     process.exit(1);
   }

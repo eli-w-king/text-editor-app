@@ -2,8 +2,7 @@ name = "writer-app-proxy"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-[vars]
-GOOGLE_API_KEY = "AIzaSyDuHImCJP0XN4iVhGjJRbWB4zc9scxvyIw"
+# GOOGLE_API_KEY is stored as a Cloudflare secret (wrangler secret put GOOGLE_API_KEY)
 
 # Uncomment to use a custom domain
 # routes = [

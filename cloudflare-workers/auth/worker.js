@@ -1,5 +1,5 @@
 /**
- * Writer App Auth Worker for Cloudflare Workers
+ * Inlay App Auth Worker for Cloudflare Workers
  *
  * Handles user registration, login, and JWT-based authentication.
  * Uses KV for user storage and crypto.subtle for password hashing (PBKDF2)
@@ -22,6 +22,9 @@
  *   - Global error handler (no stack trace leaks)
  *   - 405 responses for wrong HTTP methods
  *   - No secrets or config details in responses
+ *   - Origin-based CORS allowlist with credentials support
+ *   - Generic registration error to prevent user enumeration
+ *   - JWT header algorithm validation (prevents 'alg: none' attack)
  */
 
 // ---------------------------------------------------------------------------
@@ -34,29 +37,65 @@ const MAX_PASSWORD_LENGTH = 128;
 const MIN_PASSWORD_LENGTH = 8;
 
 // Rate limit settings (per IP, per action, approximate via KV TTL)
-const RATE_LIMIT_LOGIN_MAX = 10; // max attempts per window
+// Login: 10 attempts per IP per 15 minutes
+const RATE_LIMIT_LOGIN_MAX = 10;
+const RATE_LIMIT_LOGIN_WINDOW_SECONDS = 15 * 60;
+// Register: 5 attempts per IP per hour
 const RATE_LIMIT_REGISTER_MAX = 5;
-const RATE_LIMIT_WINDOW_SECONDS = 60; // 1 minute window
+const RATE_LIMIT_REGISTER_WINDOW_SECONDS = 60 * 60;
 
 // ---------------------------------------------------------------------------
-// CORS
+// CORS Configuration
 // ---------------------------------------------------------------------------
 
-// CORS headers for cross-origin requests.
-// MVP: allow all origins. In production, restrict to your app's domain(s).
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+/**
+ * Allowed origins for CORS. Only these origins receive a reflected
+ * Access-Control-Allow-Origin header. Null/empty origin is allowed
+ * for Electron desktop apps which send requests without an Origin header.
+ */
+const ALLOWED_ORIGINS = [
+  'http://localhost:8081',
+  'http://localhost:19006',
+  'http://localhost:3000',
+  'https://inlaynoteapp.com',
+  'https://app.inlaynoteapp.com',
+  'https://www.inlaynoteapp.com',
+];
+
+/**
+ * Build CORS headers for the given request origin.
+ * Reflects the origin back if it is in the allowlist.
+ * Allows null/empty origin for Electron desktop apps.
+ * Includes Access-Control-Allow-Credentials for cookie/auth support.
+ */
+function corsHeaders(request) {
+  const origin = request.headers.get('Origin');
+  const headers = {
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Max-Age': '86400',
+  };
+
+  // Allow null/empty origin for Electron desktop apps
+  if (!origin) {
+    headers['Access-Control-Allow-Origin'] = 'null';
+  } else if (ALLOWED_ORIGINS.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  // If origin is not in the allowlist and is not null/empty,
+  // no Access-Control-Allow-Origin header is set (browser will block).
+
+  return headers;
+}
 
 /**
  * Handle preflight OPTIONS requests.
  */
-function handleOptions() {
+function handleOptions(request) {
   return new Response(null, {
     status: 204,
-    headers: corsHeaders,
+    headers: corsHeaders(request),
   });
 }
 
@@ -67,10 +106,10 @@ function handleOptions() {
 /**
  * Return a JSON response with CORS headers.
  */
-function jsonResponse(body, status = 200) {
+function jsonResponse(request, body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(request), 'Content-Type': 'application/json' },
   });
 }
 
@@ -114,8 +153,14 @@ function getClientIP(request) {
  * Note: KV reads/writes are eventually consistent, so this is approximate.
  * For strict rate limiting, consider Durable Objects. This is sufficient for
  * brute-force prevention on an MVP.
+ *
+ * @param {Object} env - Worker environment bindings
+ * @param {string} ip - Client IP address
+ * @param {string} action - Rate limit action key
+ * @param {number} maxAttempts - Maximum allowed attempts within the window
+ * @param {number} windowSeconds - TTL window in seconds
  */
-async function checkRateLimit(env, ip, action, maxAttempts) {
+async function checkRateLimit(env, ip, action, maxAttempts, windowSeconds) {
   const key = `ratelimit:${ip}:${action}`;
 
   try {
@@ -128,7 +173,7 @@ async function checkRateLimit(env, ip, action, maxAttempts) {
 
     // Increment counter with TTL
     await env.USERS_KV.put(key, String(count + 1), {
-      expirationTtl: RATE_LIMIT_WINDOW_SECONDS,
+      expirationTtl: windowSeconds,
     });
 
     return true;
@@ -151,18 +196,18 @@ async function parseJsonBody(request) {
   // Check Content-Length header for early rejection
   const contentLength = request.headers.get('Content-Length');
   if (contentLength && parseInt(contentLength, 10) > MAX_REQUEST_BODY_BYTES) {
-    return { data: null, error: jsonResponse({ error: 'Request body too large' }, 413) };
+    return { data: null, error: jsonResponse(request, { error: 'Request body too large' }, 413) };
   }
 
   try {
     const text = await request.text();
     if (text.length > MAX_REQUEST_BODY_BYTES) {
-      return { data: null, error: jsonResponse({ error: 'Request body too large' }, 413) };
+      return { data: null, error: jsonResponse(request, { error: 'Request body too large' }, 413) };
     }
     const data = JSON.parse(text);
     return { data, error: null };
   } catch {
-    return { data: null, error: jsonResponse({ error: 'Invalid JSON body' }, 400) };
+    return { data: null, error: jsonResponse(request, { error: 'Invalid JSON body' }, 400) };
   }
 }
 
@@ -348,7 +393,16 @@ async function createJWT(payload, secret) {
 
 /**
  * Verify and decode a JWT. Returns the payload or null if invalid/expired.
- * Wrapped in try/catch to safely handle any malformed input.
+ *
+ * Security checks performed:
+ * 1. Input type validation (must be non-empty string)
+ * 2. Structure validation (must have exactly 3 dot-separated parts)
+ * 3. Algorithm header validation (must be HS256 -- prevents 'alg: none' attack)
+ * 4. HMAC-SHA256 signature verification via crypto.subtle
+ * 5. Expiration check (rejects tokens where exp < now)
+ *
+ * Wrapped in try/catch to safely handle any malformed input without
+ * leaking internal error details.
  */
 async function verifyJWT(token, secret) {
   try {
@@ -362,6 +416,22 @@ async function verifyJWT(token, secret) {
     }
 
     const [encodedHeader, encodedPayload, encodedSignature] = parts;
+
+    // Validate the JWT header algorithm.
+    // This prevents the 'alg: none' attack (CVE-2015-9235) where an attacker
+    // sets the algorithm to 'none' and sends an unsigned token. By explicitly
+    // checking that the header specifies 'HS256', we reject any other algorithm
+    // before proceeding to signature verification.
+    let header;
+    try {
+      header = JSON.parse(base64urlDecode(encodedHeader));
+    } catch {
+      return null;
+    }
+    if (!header || header.alg !== 'HS256') {
+      return null;
+    }
+
     const signingInput = `${encodedHeader}.${encodedPayload}`;
 
     const key = await getSigningKey(secret);
@@ -434,11 +504,11 @@ function isValidPassword(password) {
  * Validates input, checks for existing user, creates user in KV, returns JWT.
  */
 async function handleRegister(request, env) {
-  // Rate limit check
+  // Rate limit check: 5 attempts per IP per hour
   const ip = getClientIP(request);
-  const allowed = await checkRateLimit(env, ip, 'register', RATE_LIMIT_REGISTER_MAX);
+  const allowed = await checkRateLimit(env, ip, 'register', RATE_LIMIT_REGISTER_MAX, RATE_LIMIT_REGISTER_WINDOW_SECONDS);
   if (!allowed) {
-    return jsonResponse({ error: 'Too many requests. Please try again later.' }, 429);
+    return jsonResponse(request, { error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const { data: body, error: parseError } = await parseJsonBody(request);
@@ -448,12 +518,13 @@ async function handleRegister(request, env) {
 
   // Validate email
   if (!email || !isValidEmail(email)) {
-    return jsonResponse({ error: 'Invalid email format' }, 400);
+    return jsonResponse(request, { error: 'Invalid email format' }, 400);
   }
 
   // Validate password
   if (!password || !isValidPassword(password)) {
     return jsonResponse(
+      request,
       { error: `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters long` },
       400,
     );
@@ -464,7 +535,9 @@ async function handleRegister(request, env) {
   // Check if user already exists
   const existingUser = await env.USERS_KV.get(`user:email:${normalizedEmail}`);
   if (existingUser) {
-    return jsonResponse({ error: 'A user with this email already exists' }, 409);
+    // Generic message to prevent user enumeration -- do not reveal whether
+    // the email is already registered.
+    return jsonResponse(request, { error: 'Registration failed. Please try again or sign in if you already have an account.' }, 409);
   }
 
   // Hash password
@@ -490,12 +563,12 @@ async function handleRegister(request, env) {
   const jwtSecret = env.JWT_SECRET;
   if (!jwtSecret) {
     // Do not reveal which config is missing to external callers
-    return jsonResponse({ error: 'Internal server error' }, 500);
+    return jsonResponse(request, { error: 'Internal server error' }, 500);
   }
 
   const token = await createJWT({ sub: userId, email: normalizedEmail }, jwtSecret);
 
-  return jsonResponse({
+  return jsonResponse(request, {
     token,
     user: {
       id: userId,
@@ -512,11 +585,11 @@ async function handleRegister(request, env) {
  * Looks up user by email, verifies password, returns JWT.
  */
 async function handleLogin(request, env) {
-  // Rate limit check
+  // Rate limit check: 10 attempts per IP per 15 minutes
   const ip = getClientIP(request);
-  const allowed = await checkRateLimit(env, ip, 'login', RATE_LIMIT_LOGIN_MAX);
+  const allowed = await checkRateLimit(env, ip, 'login', RATE_LIMIT_LOGIN_MAX, RATE_LIMIT_LOGIN_WINDOW_SECONDS);
   if (!allowed) {
-    return jsonResponse({ error: 'Too many requests. Please try again later.' }, 429);
+    return jsonResponse(request, { error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const { data: body, error: parseError } = await parseJsonBody(request);
@@ -525,12 +598,12 @@ async function handleLogin(request, env) {
   const { email, password } = body;
 
   if (!email || !password) {
-    return jsonResponse({ error: 'Email and password are required' }, 400);
+    return jsonResponse(request, { error: 'Email and password are required' }, 400);
   }
 
   // Validate types to prevent unexpected behavior
   if (typeof email !== 'string' || typeof password !== 'string') {
-    return jsonResponse({ error: 'Email and password must be strings' }, 400);
+    return jsonResponse(request, { error: 'Email and password must be strings' }, 400);
   }
 
   const normalizedEmail = email.toLowerCase().trim();
@@ -539,7 +612,7 @@ async function handleLogin(request, env) {
   const userJson = await env.USERS_KV.get(`user:email:${normalizedEmail}`);
   if (!userJson) {
     // Use a generic message to avoid leaking whether the email exists
-    return jsonResponse({ error: 'Invalid email or password' }, 401);
+    return jsonResponse(request, { error: 'Invalid email or password' }, 401);
   }
 
   const user = JSON.parse(userJson);
@@ -547,18 +620,18 @@ async function handleLogin(request, env) {
   // Verify password
   const passwordValid = await verifyPassword(password, user.password_hash, user.salt);
   if (!passwordValid) {
-    return jsonResponse({ error: 'Invalid email or password' }, 401);
+    return jsonResponse(request, { error: 'Invalid email or password' }, 401);
   }
 
   // Generate JWT
   const jwtSecret = env.JWT_SECRET;
   if (!jwtSecret) {
-    return jsonResponse({ error: 'Internal server error' }, 500);
+    return jsonResponse(request, { error: 'Internal server error' }, 500);
   }
 
   const token = await createJWT({ sub: user.id, email: user.email }, jwtSecret);
 
-  return jsonResponse({
+  return jsonResponse(request, {
     token,
     user: {
       id: user.id,
@@ -578,34 +651,34 @@ async function handleMe(request, env) {
   // Extract token from Authorization header
   const authHeader = request.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return jsonResponse({ error: 'Missing or invalid Authorization header' }, 401);
+    return jsonResponse(request, { error: 'Missing or invalid Authorization header' }, 401);
   }
 
   const token = authHeader.slice(7).trim();
   if (!token) {
-    return jsonResponse({ error: 'Missing or invalid Authorization header' }, 401);
+    return jsonResponse(request, { error: 'Missing or invalid Authorization header' }, 401);
   }
 
   const jwtSecret = env.JWT_SECRET;
   if (!jwtSecret) {
-    return jsonResponse({ error: 'Internal server error' }, 500);
+    return jsonResponse(request, { error: 'Internal server error' }, 500);
   }
 
   // Verify and decode JWT
   const payload = await verifyJWT(token, jwtSecret);
   if (!payload) {
-    return jsonResponse({ error: 'Invalid or expired token' }, 401);
+    return jsonResponse(request, { error: 'Invalid or expired token' }, 401);
   }
 
   // Look up user by ID to ensure they still exist
   const userJson = await env.USERS_KV.get(`user:id:${payload.sub}`);
   if (!userJson) {
-    return jsonResponse({ error: 'User not found' }, 404);
+    return jsonResponse(request, { error: 'User not found' }, 404);
   }
 
   const user = JSON.parse(userJson);
 
-  return jsonResponse({
+  return jsonResponse(request, {
     user: {
       id: user.id,
       email: user.email,
@@ -618,10 +691,10 @@ async function handleMe(request, env) {
  * Health check endpoint.
  * Does not leak internal configuration details.
  */
-function handleHealth() {
-  return jsonResponse({
+function handleHealth(request) {
+  return jsonResponse(request, {
     status: 'ok',
-    service: 'writer-app-auth',
+    service: 'inlay-app-auth',
     timestamp: new Date().toISOString(),
   });
 }
@@ -638,43 +711,48 @@ export default {
 
       // Handle CORS preflight
       if (request.method === 'OPTIONS') {
-        return handleOptions();
+        return handleOptions(request);
       }
 
       // Health check (GET only)
       if (path === '/' || path === '/health') {
         if (request.method !== 'GET') {
-          return jsonResponse({ error: 'Method not allowed' }, 405);
+          return jsonResponse(request, { error: 'Method not allowed' }, 405);
         }
-        return handleHealth();
+        return handleHealth(request);
       }
 
       // Auth routes
       if (path === '/api/auth/register') {
         if (request.method !== 'POST') {
-          return jsonResponse({ error: 'Method not allowed' }, 405);
+          return jsonResponse(request, { error: 'Method not allowed' }, 405);
         }
         return handleRegister(request, env);
       }
 
       if (path === '/api/auth/login') {
         if (request.method !== 'POST') {
-          return jsonResponse({ error: 'Method not allowed' }, 405);
+          return jsonResponse(request, { error: 'Method not allowed' }, 405);
         }
         return handleLogin(request, env);
       }
 
       if (path === '/api/auth/me') {
         if (request.method !== 'GET') {
-          return jsonResponse({ error: 'Method not allowed' }, 405);
+          return jsonResponse(request, { error: 'Method not allowed' }, 405);
         }
         return handleMe(request, env);
       }
 
-      return jsonResponse({ error: 'Not found' }, 404);
+      return jsonResponse(request, { error: 'Not found' }, 404);
     } catch {
-      // Global error handler: never leak internal details or stack traces
-      return jsonResponse({ error: 'Internal server error' }, 500);
+      // Global error handler: never leak internal details or stack traces.
+      // Include CORS headers so the browser can read the error response.
+      const hdrs = corsHeaders(request);
+      return new Response(JSON.stringify({ error: 'Internal server error' }), {
+        status: 500,
+        headers: { ...hdrs, 'Content-Type': 'application/json' },
+      });
     }
   },
 };

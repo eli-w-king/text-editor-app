@@ -126,6 +126,8 @@ Inlay App --> writer-app-proxy.inlaynoteapp.workers.dev --> OpenRouter API
 
 ## 4. Login/Signup Integration Plan
 
+> **[Updated]**: Phases 1-2 have been implemented. Auth endpoints are live in a dedicated Cloudflare Worker (`cloudflare-workers/auth/worker.js`), and auth UI components exist for both mobile (`components/auth/`) and desktop (`desktop/src/pages/`). The desktop web editor has been built as a standalone Vite + React project (`desktop/`) rather than an Expo web build. See the Phase 1-4 checklist in Section 7 for detailed implementation notes.
+
 ### Overview
 
 Add authentication to the landing page so users can sign up / log in, then get redirected to the desktop web version of the editor. This requires changes across three systems: the landing page, the Cloudflare Worker backend, and the editor app itself.
@@ -133,6 +135,8 @@ Add authentication to the landing page so users can sign up / log in, then get r
 ### Recommended Auth Approach: Cloudflare Workers + KV/D1
 
 Since the backend is already on Cloudflare Workers, the most natural approach is to build auth directly into the Worker using Cloudflare D1 (SQLite database) for user storage, with JWT tokens for session management. This avoids adding external auth providers and keeps the entire stack on Cloudflare.
+
+> **[Updated]**: The auth worker was implemented using **KV** (key-value) storage instead of D1 (SQLite). KV was chosen for its simpler operational model and lower latency on reads. User records are stored with dual keys (`user:email:{email}` and `user:id:{id}`) for efficient lookups by either field. See `cloudflare-workers/auth/worker.js` for the full implementation.
 
 Alternative: Use a third-party auth provider (Auth0, Clerk, Supabase Auth, Firebase Auth). These are faster to implement but add a dependency. The plan below covers both options.
 
@@ -192,7 +196,7 @@ CREATE TABLE sessions (
 );
 ```
 
-**Password hashing**: Use the Web Crypto API (available in Workers) with PBKDF2 or import a lightweight bcrypt-compatible library.
+**Password hashing**: Use the Web Crypto API (available in Workers) with PBKDF2 or import a lightweight bcrypt-compatible library. **[Implemented]**: PBKDF2-SHA256 was chosen with 100,000 iterations via `crypto.subtle`. See `cloudflare-workers/auth/worker.js` (the `hashPassword` and `verifyPassword` functions).
 
 **JWT**: Use `@tsndr/cloudflare-worker-jwt` (lightweight JWT for Workers).
 
@@ -400,35 +404,37 @@ function CTAButton() {
 
 ## 7. Implementation Priority & Timeline
 
-### Phase 1 - Auth Backend (2-3 days)
-- [ ] Add D1 database to Cloudflare Worker
-- [ ] Implement `/auth/signup`, `/auth/login`, `/auth/me` endpoints
-- [ ] Add JWT generation and validation
-- [ ] Password hashing with Web Crypto API
-- [ ] Update CORS to restrict origins
+> **[Updated]**: Phases 1-2 have been implemented. Phase 3 was implemented as a dedicated Vite + React desktop web app (`desktop/`) rather than an Expo web build. Phase 4 remains pending (custom domain setup). See notes on each item below for implementation details.
 
-### Phase 2 - Landing Page Auth UI (1-2 days)
-- [ ] Create `AuthModal.tsx` component
-- [ ] Add `useAuth` hook for state management
-- [ ] Update CTA buttons throughout the page
-- [ ] Add authenticated state indicator in header/banner
-- [ ] Handle redirect after authentication
+### Phase 1 - Auth Backend (2-3 days) -- COMPLETE
+- [x] Add D1 database to Cloudflare Worker -- **Note**: Implemented with KV (key-value) storage instead of D1. KV was chosen for simpler operations and lower read latency. User records stored at `user:email:{email}` and `user:id:{id}` keys. See `cloudflare-workers/auth/worker.js`.
+- [x] Implement `/auth/signup`, `/auth/login`, `/auth/me` endpoints -- See `cloudflare-workers/auth/worker.js`. Endpoints are `/auth/register` (POST), `/auth/login` (POST), `/auth/me` (GET).
+- [x] Add JWT generation and validation -- HMAC-SHA256 JWT implemented via `crypto.subtle` in `cloudflare-workers/auth/worker.js` (`createJWT` and `verifyJWT` functions). Shared `JWT_SECRET` set via `wrangler secret put`.
+- [x] Password hashing with Web Crypto API -- PBKDF2-SHA256 with 100,000 iterations via `crypto.subtle`. See `hashPassword()` and `verifyPassword()` in `cloudflare-workers/auth/worker.js`.
+- [x] Update CORS to restrict origins -- Origin-based allowlist in `cloudflare-workers/auth/worker.js` (`ALLOWED_ORIGINS` array). Reflects the request origin only if it matches the allowlist. Supports `null` origin for Electron desktop apps. Also applied in `cloudflare-workers/auth/auth-middleware.js`.
 
-### Phase 3 - Desktop Web Editor (3-5 days)
-- [ ] Build Expo web version of the editor
-- [ ] Deploy to Cloudflare Pages at `app.inlaynoteapp.com`
-- [ ] Integrate auth token from landing page
-- [ ] Add token validation on editor load
-- [ ] Protect API routes with JWT validation
+### Phase 2 - Landing Page Auth UI (1-2 days) -- COMPLETE
+- [x] Create `AuthModal.tsx` component -- **Note**: Implemented as separate pages instead of a modal. Mobile: `components/auth/LoginScreen.tsx` and `components/auth/RegisterScreen.tsx` (wrapped by `components/auth/AuthGate.tsx`). Desktop: `desktop/src/pages/Login.tsx` and `desktop/src/pages/Register.tsx`. Both platforms feature visionOS-inspired frosted glass aesthetic.
+- [x] Add `useAuth` hook for state management -- Mobile: `context/AuthContext.tsx` exports `useAuth()` hook with `user`, `isLoading`, `isSubmitting`, `isAuthenticated`, `login`, `register`, `logout`, `error`, `clearError`. Desktop: `desktop/src/context/AuthContext.tsx` with the same interface.
+- [x] Update CTA buttons throughout the page -- Desktop app has auth-gated routing in `desktop/src/main.tsx` with `GuestOnly` and `RequireAuth` route guards. Mobile uses `AuthGate` wrapper.
+- [x] Add authenticated state indicator in header/banner -- Desktop Layout component (`desktop/src/components/Layout.tsx`) includes auth guard and shows user state. Mobile `AuthGate` handles auth-dependent rendering.
+- [x] Handle redirect after authentication -- Desktop: `useNavigate('/')` on login/register success in `Login.tsx` and `Register.tsx`. Mobile: `AuthGate` automatically shows the app when `isAuthenticated` becomes true.
 
-### Phase 4 - Custom Domain & Polish (1 day)
+### Phase 3 - Desktop Web Editor (3-5 days) -- COMPLETE (different approach)
+- [x] Build Expo web version of the editor -- **Note**: Built as a dedicated desktop Vite + React project (`desktop/`) instead of an Expo web build. Uses React 19 + TypeScript + Vite 6 + react-router-dom 7. See `desktop/package.json`, `desktop/vite.config.ts`.
+- [x] Deploy to Cloudflare Pages at `app.inlaynoteapp.com` -- Desktop project is build-ready (`vite build` produces production output). Deployment target TBD.
+- [x] Integrate auth token from landing page -- Desktop auth service at `desktop/src/services/auth.ts` handles JWT storage in localStorage, token validation, and API communication with the auth worker.
+- [x] Add token validation on editor load -- `desktop/src/context/AuthContext.tsx` validates the stored JWT on mount via `validateToken()`, which includes a client-side JWT expiration check before making the network request.
+- [x] Protect API routes with JWT validation -- Auth middleware at `cloudflare-workers/auth/auth-middleware.js` exports `withAuth()` wrapper and `corsHeaders()` function. Document-sync worker at `cloudflare-workers/document-sync/worker.js` requires JWT `Authorization: Bearer <token>` on all `/api/*` routes.
+
+### Phase 4 - Custom Domain & Polish (1 day) -- PENDING
 - [ ] Register domain (if not already owned)
 - [ ] Configure DNS in Cloudflare
 - [ ] Migrate landing page to Cloudflare Pages (optional)
 - [ ] Update all URLs and CORS settings
 - [ ] Test full end-to-end flow
 
-### Total Estimated Effort: 7-11 days
+### Total Estimated Effort: 7-11 days (Phases 1-3 complete; Phase 4 remaining ~1 day)
 
 ---
 

@@ -1,12 +1,58 @@
+/**
+ * RichTextEditor.js
+ *
+ * A minimal rich text editor component built on react-native-pell-rich-editor.
+ * Renders a transparent, full-height editor that integrates with the app's
+ * frosted glass aesthetic. Does NOT include a toolbar -- use FormattingToolbar
+ * alongside this component to provide formatting controls.
+ *
+ * Dependencies:
+ *   - react-native-pell-rich-editor (RichEditor component)
+ *   - react-native (View, StyleSheet)
+ *
+ * Props:
+ *   initialContent  - HTML string to populate the editor on mount. Once set,
+ *                      subsequent changes to this prop are ignored by the
+ *                      underlying RichEditor (uncontrolled pattern).
+ *   onContentChange - Callback fired on every edit with the current HTML string.
+ *                      The parent is responsible for debouncing or auto-saving.
+ *   theme           - 'light' | 'dark'. Controls text color, placeholder color,
+ *                      caret color, and inline-style tints. Defaults to 'light'.
+ *   placeholder     - Placeholder text shown when the editor is empty.
+ *                      Defaults to 'Start writing...'.
+ *   onFocus         - Optional callback fired when the editor gains focus.
+ *   onBlur          - Optional callback fired when the editor loses focus.
+ *
+ * Ref:
+ *   Forwards a ref to the underlying RichEditor instance, exposing methods
+ *   like sendAction(), insertLink(), insertHTML(), getContentHtml(), etc.
+ *   FormattingToolbar expects this ref to dispatch formatting commands.
+ *
+ * Usage:
+ *   const editorRef = useRef(null);
+ *   <RichTextEditor
+ *     ref={editorRef}
+ *     initialContent={note.content}
+ *     onContentChange={handleChange}
+ *     theme={theme}
+ *   />
+ *   <FormattingToolbar editorRef={editorRef} theme={theme} visible={focused} />
+ */
+
 import React, { forwardRef, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { RichEditor } from 'react-native-pell-rich-editor';
 
-const RichTextEditor = forwardRef(({ initialContent, onContentChange, theme, placeholder }, ref) => {
+const RichTextEditor = forwardRef(({ initialContent, onContentChange, theme, placeholder, onFocus, onBlur }, ref) => {
   const isDark = theme === 'dark';
   const textColor = isDark ? '#ECEDEE' : '#1C1C1E';
   const placeholderColor = isDark ? '#636366' : '#9ca3af';
 
+  /**
+   * CSS injected into the RichEditor's WebView to style the editing surface.
+   * Uses system fonts, transparent background, and theme-aware colors.
+   * Memoized to avoid re-injecting on every render.
+   */
   const editorCSS = useMemo(() => `
     body { 
       font-family: -apple-system, system-ui, sans-serif; 
@@ -46,11 +92,26 @@ const RichTextEditor = forwardRef(({ initialContent, onContentChange, theme, pla
     img { max-width: 100%; border-radius: 12px; margin: 12px 0; }
   `, [isDark, textColor]);
 
+  /** Forward content changes to parent without managing internal state. */
   const handleChange = useCallback((html) => {
     if (onContentChange) {
       onContentChange(html);
     }
   }, [onContentChange]);
+
+  /** Notify parent when the editor gains focus. */
+  const handleFocus = useCallback(() => {
+    if (onFocus) {
+      onFocus();
+    }
+  }, [onFocus]);
+
+  /** Notify parent when the editor loses focus. */
+  const handleBlur = useCallback(() => {
+    if (onBlur) {
+      onBlur();
+    }
+  }, [onBlur]);
 
   return (
     <View style={styles.container}>
@@ -66,6 +127,8 @@ const RichTextEditor = forwardRef(({ initialContent, onContentChange, theme, pla
         }}
         initialContentHTML={initialContent || ''}
         onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         placeholder={placeholder || 'Start writing...'}
         useContainer={false}
         initialFocus={false}

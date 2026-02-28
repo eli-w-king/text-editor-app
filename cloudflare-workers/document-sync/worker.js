@@ -21,6 +21,17 @@
  *   PUT    /api/documents/:id   - Update a document (authenticated)
  *   DELETE /api/documents/:id   - Delete a document (authenticated)
  *
+ * Security features:
+ *   - JWT authentication with algorithm validation (HS256 only)
+ *   - Origin-based CORS allowlist (no wildcard, omits header for unknown origins)
+ *   - Document ID validation (prevents path traversal in R2 keys)
+ *   - Content size limits (1 MB max)
+ *   - Title length limits (500 chars max)
+ *   - Sort field validation (whitelist-based)
+ *   - 405 responses for wrong HTTP methods on known routes
+ *   - Global error handler (no stack trace leaks to clients)
+ *   - Health endpoint does not leak configuration details
+ *
  * Deploy: cd cloudflare-workers/document-sync && npx wrangler deploy
  * Set secret: npx wrangler secret put JWT_SECRET
  */
@@ -42,7 +53,15 @@ const MAX_TITLE_LENGTH = 500;
 const DOCUMENT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
 
 // ---------------------------------------------------------------------------
-// CORS Configuration
+// CORS Configuration -- Origin-based allowlist (no wildcard)
+//
+// Behavior (consistent with auth worker.js and auth-middleware.js):
+//   - If the request Origin is in the allowlist, reflect it back.
+//   - If the Origin is null or empty (e.g. Electron desktop apps),
+//     set Access-Control-Allow-Origin to 'null'.
+//   - If the Origin is present but NOT in the allowlist, do NOT set
+//     Access-Control-Allow-Origin at all. The browser will reject the
+//     response, which is the secure default.
 // ---------------------------------------------------------------------------
 
 const ALLOWED_ORIGINS = [
@@ -57,16 +76,27 @@ const ALLOWED_ORIGINS = [
 /**
  * Build CORS headers for the given request origin.
  * Only reflects the origin back if it is in the allow-list.
+ * Handles null/empty origin for Electron desktop apps.
  */
 function corsHeaders(request) {
-  const origin = request.headers.get('Origin') || '';
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+  const origin = request.headers.get('Origin');
+  const headers = {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Document-Version',
+    'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };
+
+  if (!origin) {
+    // Null/empty origin: Electron desktop apps, server-to-server, etc.
+    headers['Access-Control-Allow-Origin'] = 'null';
+  } else if (ALLOWED_ORIGINS.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  // If origin is present but not in allowlist, omit the header entirely.
+  // The browser will block the response (secure default).
+
+  return headers;
 }
 
 /**
@@ -135,6 +165,14 @@ function base64UrlDecodeToBuffer(str) {
  * Verify a JWT signed with HMAC-SHA256.
  * Returns the decoded payload if valid and not expired, or null otherwise.
  *
+ * Security checks:
+ * 1. Input type validation (must be non-empty string)
+ * 2. Structure validation (must have exactly 3 parts)
+ * 3. Algorithm header validation (must be HS256 -- prevents 'alg: none' attack)
+ * 4. HMAC-SHA256 signature verification via crypto.subtle
+ * 5. Expiration check
+ * 6. Requires `sub` claim (user ID)
+ *
  * @param {string} token  The raw JWT string.
  * @param {string} secret The shared HMAC signing secret.
  * @returns {Promise<object|null>}
@@ -147,6 +185,16 @@ async function verifyJWT(token, secret) {
     if (parts.length !== 3) return null;
 
     const [encodedHeader, encodedPayload, encodedSignature] = parts;
+
+    // Validate algorithm header to prevent 'alg: none' attack
+    let header;
+    try {
+      header = JSON.parse(base64UrlDecode(encodedHeader));
+    } catch {
+      return null;
+    }
+    if (!header || header.alg !== 'HS256') return null;
+
     const signingInput = `${encodedHeader}.${encodedPayload}`;
 
     const encoder = new TextEncoder();
@@ -312,17 +360,13 @@ async function removeFromIndex(bucket, userId, documentId) {
 /**
  * GET /health
  *
- * Public health check. Reports whether required bindings are configured.
+ * Public health check. Does NOT leak configuration details (env bindings,
+ * secret availability, etc.) to prevent reconnaissance.
  */
-function handleHealth(request, env) {
+function handleHealth(request) {
   return jsonResponse(request, {
     status: 'ok',
     service: 'writer-app-document-sync',
-    storage: 'r2',
-    configured: {
-      documents_bucket: !!env.DOCUMENTS_BUCKET,
-      jwt_secret: !!env.JWT_SECRET,
-    },
     timestamp: new Date().toISOString(),
   });
 }
@@ -644,7 +688,10 @@ export default {
     try {
       // Health check (public, no auth required)
       if (path === '/health' || path === '/') {
-        return handleHealth(request, env);
+        if (method !== 'GET') {
+          return errorResponse(request, 'Method not allowed', 405, 'METHOD_NOT_ALLOWED');
+        }
+        return handleHealth(request);
       }
 
       // All /api/* routes require authentication
@@ -653,15 +700,10 @@ export default {
       }
 
       // Verify required env bindings are configured
-      if (!env.JWT_SECRET) {
+      if (!env.JWT_SECRET || !env.DOCUMENTS_BUCKET) {
         // Log the config error server-side but don't expose details to clients
-        console.error('JWT_SECRET is not configured. Run: npx wrangler secret put JWT_SECRET');
-        return errorResponse(request, 'Server configuration error', 500, 'CONFIG_ERROR');
-      }
-
-      if (!env.DOCUMENTS_BUCKET) {
-        console.error('DOCUMENTS_BUCKET R2 binding is not configured');
-        return errorResponse(request, 'Server configuration error', 500, 'CONFIG_ERROR');
+        console.error('Missing required env bindings: JWT_SECRET and/or DOCUMENTS_BUCKET');
+        return errorResponse(request, 'Internal server error', 500, 'INTERNAL_ERROR');
       }
 
       // Authenticate the request via JWT

@@ -1,0 +1,18 @@
+{
+  "name": "writer-app-document-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Document sync API for Writer App, running on Cloudflare Workers with R2 storage and JWT-based authentication.",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^4.14.0"
+  }
+}
