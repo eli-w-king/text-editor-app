@@ -11,7 +11,7 @@
  *   - Team ($12/user/mo): Collaboration, shared workspaces, admin controls
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   View,
   Text,
