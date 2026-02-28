@@ -1,6 +1,37 @@
+/**
+ * FormattingToolbar.js
+ *
+ * A frosted glass formatting toolbar for the rich text editor.
+ * Positioned at the bottom of the screen, it slides in/out when the editor
+ * gains or loses focus. Uses BlurView to match the app's FloatingMenu aesthetic.
+ *
+ * Dependencies:
+ *   - react-native-pell-rich-editor (actions enum)
+ *   - expo-blur (BlurView for frosted glass)
+ *   - @expo/vector-icons (Ionicons for icon buttons)
+ *   - react-native-safe-area-context (bottom inset for iPhone home bar)
+ *
+ * Props:
+ *   editorRef  - React ref pointing to the RichEditor instance from
+ *                react-native-pell-rich-editor. Used to dispatch formatting
+ *                actions (bold, italic, etc.) and insert links.
+ *   theme      - 'light' | 'dark'. Controls text/icon colors and blur tint.
+ *                Defaults to 'light' if not provided.
+ *   visible    - Boolean controlling whether the toolbar is shown. When false
+ *                the toolbar slides offscreen and becomes non-interactive.
+ *                Defaults to false.
+ *
+ * Usage:
+ *   <FormattingToolbar
+ *     editorRef={richEditorRef}
+ *     theme={theme}
+ *     visible={isEditorFocused && !showingSavedNotes}
+ *   />
+ */
+
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   Alert,
   Animated,
@@ -14,6 +45,17 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { actions } from 'react-native-pell-rich-editor';
 
+/**
+ * Configuration for toolbar buttons.
+ *
+ * Each entry is one of three types:
+ *   - 'text'    : renders a styled text label (e.g. B, I, U, H1, H2)
+ *   - 'icon'    : renders an Ionicons icon
+ *   - 'divider' : renders a visual separator between button groups
+ *
+ * The `special` field on the link button triggers the platform-aware URL prompt
+ * instead of directly calling sendAction.
+ */
 const TOOLBAR_BUTTONS = [
   { action: actions.setBold, label: 'B', style: { fontWeight: '700' }, type: 'text' },
   { action: actions.setItalic, label: 'I', style: { fontStyle: 'italic' }, type: 'text' },
@@ -29,20 +71,26 @@ const TOOLBAR_BUTTONS = [
   { action: actions.blockquote, icon: 'chatbubble-outline', type: 'icon' },
 ];
 
-export default function FormattingToolbar({ editorRef, theme, visible }) {
+export default function FormattingToolbar({ editorRef, theme = 'light', visible = false }) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(100)).current;
   const isDark = theme === 'dark';
 
+  // Animate toolbar in/out based on visibility
   useEffect(() => {
     Animated.timing(translateY, {
       toValue: visible ? 0 : 100,
       duration: 250,
       useNativeDriver: true,
     }).start();
-  }, [visible]);
+  }, [visible, translateY]);
 
-  const handleAction = (button) => {
+  /**
+   * Dispatches the formatting action to the RichEditor.
+   * Link insertion is handled separately via handleLink() which shows
+   * a platform-specific URL prompt.
+   */
+  const handleAction = useCallback((button) => {
     if (!editorRef?.current) return;
 
     if (button.special === 'link') {
@@ -51,9 +99,20 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
     }
 
     editorRef.current.sendAction(button.action, 'result');
-  };
+  }, [editorRef]);
 
-  const handleLink = () => {
+  /**
+   * Insert a link with a platform-specific prompt.
+   *
+   * iOS: Uses Alert.prompt for a native text input dialog.
+   * Android: Falls back to the editor's built-in link dialog because
+   * Alert.prompt is iOS-only.
+   *
+   * Automatically prefixes "https://" if the user omits the protocol.
+   */
+  const handleLink = useCallback(() => {
+    if (!editorRef?.current) return;
+
     if (Platform.OS === 'ios') {
       Alert.prompt(
         'Insert Link',
@@ -64,6 +123,7 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
             text: 'Insert',
             onPress: (url) => {
               if (url && url.trim()) {
+                // Ensure URL has a protocol prefix
                 const fullUrl = url.startsWith('http') ? url : `https://${url}`;
                 editorRef.current?.insertLink('Link', fullUrl);
               }
@@ -74,11 +134,13 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
         'https://'
       );
     } else {
-      // Android fallback - use the editor's built-in link dialog
+      // Android fallback -- use the editor's built-in link dialog
       editorRef.current?.sendAction(actions.insertLink, 'result');
     }
-  };
+  }, [editorRef]);
 
+  // Theme-dependent colors matching the app's frosted glass aesthetic.
+  // Values align with FloatingMenu.tsx getThemeColors().
   const bgColor = isDark ? 'rgba(40,40,42,0.5)' : 'rgba(255,255,255,0.3)';
   const iconColor = isDark ? '#ECEDEE' : '#1C1C1E';
   const borderColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
@@ -90,22 +152,28 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
         styles.wrapper,
         {
           transform: [{ translateY }],
+          // Bottom padding accounts for iPhone home bar via SafeAreaInsets
           paddingBottom: Math.max(insets.bottom, 8),
         },
       ]}
       pointerEvents={visible ? 'auto' : 'none'}
     >
+      {/* Frosted glass background -- matches FloatingMenu aesthetic */}
       <BlurView
         intensity={40}
         tint={isDark ? 'dark' : 'light'}
         style={[StyleSheet.absoluteFill, { backgroundColor: bgColor }]}
       />
+
+      {/* Subtle top border */}
       <View
         style={[
           styles.topBorder,
           { borderTopColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
         ]}
       />
+
+      {/* Horizontal scrollable button row */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -113,6 +181,7 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
         keyboardShouldPersistTaps="always"
       >
         {TOOLBAR_BUTTONS.map((button, index) => {
+          // Render divider separators between button groups
           if (button.type === 'divider') {
             return (
               <View
@@ -124,10 +193,12 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
 
           return (
             <TouchableOpacity
-              key={button.action || index}
+              key={button.action || `btn-${index}`}
               style={[styles.button, { borderColor }]}
               onPress={() => handleAction(button)}
               activeOpacity={0.6}
+              accessibilityRole="button"
+              accessibilityLabel={button.label || button.icon?.replace('-outline', '') || 'format'}
             >
               {button.type === 'text' ? (
                 <Text style={[styles.buttonLabel, { color: iconColor }, button.style]}>
@@ -161,7 +232,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   scrollContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     alignItems: 'center',
     gap: 8,

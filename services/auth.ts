@@ -1,4 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// SECURITY NOTE: This module intentionally contains zero console.log/warn/error
+// statements to prevent accidental leakage of tokens, passwords, or email addresses.
+
+import * as SecureStore from 'expo-secure-store';
 
 const API_BASE = 'https://writer-app-auth.inlaynoteapp.workers.dev';
 const TOKEN_KEY = 'writer_auth_token';
@@ -15,15 +18,36 @@ export interface AuthResponse {
 }
 
 /**
+ * Validate and sanitize auth inputs.
+ * Trims email; throws early if email or password are empty.
+ */
+function validateInputs(email: string, password: string): string {
+  if (typeof email !== 'string' || email.trim().length === 0) {
+    throw new Error('Email is required.');
+  }
+  if (typeof password !== 'string' || password.length === 0) {
+    throw new Error('Password is required.');
+  }
+  return email.trim();
+}
+
+/**
  * Register a new user account.
- * Stores the JWT token in AsyncStorage on success.
+ * Stores the JWT token in expo-secure-store (encrypted) on success.
  */
 export async function register(email: string, password: string): Promise<AuthResponse> {
-  const response = await fetch(`${API_BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
+  const sanitizedEmail = validateInputs(email, password);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: sanitizedEmail, password }),
+    });
+  } catch {
+    throw new Error('Network error. Please check your connection and try again.');
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Registration failed' }));
@@ -31,20 +55,27 @@ export async function register(email: string, password: string): Promise<AuthRes
   }
 
   const data: AuthResponse = await response.json();
-  await AsyncStorage.setItem(TOKEN_KEY, data.token);
+  await SecureStore.setItemAsync(TOKEN_KEY, data.token);
   return data;
 }
 
 /**
  * Log in with existing credentials.
- * Stores the JWT token in AsyncStorage on success.
+ * Stores the JWT token in expo-secure-store (encrypted) on success.
  */
 export async function login(email: string, password: string): Promise<AuthResponse> {
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
+  const sanitizedEmail = validateInputs(email, password);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: sanitizedEmail, password }),
+    });
+  } catch {
+    throw new Error('Network error. Please check your connection and try again.');
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Login failed' }));
@@ -52,7 +83,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
   }
 
   const data: AuthResponse = await response.json();
-  await AsyncStorage.setItem(TOKEN_KEY, data.token);
+  await SecureStore.setItemAsync(TOKEN_KEY, data.token);
   return data;
 }
 
@@ -60,15 +91,15 @@ export async function login(email: string, password: string): Promise<AuthRespon
  * Log out the current user by clearing the stored token.
  */
 export async function logout(): Promise<void> {
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
 /**
- * Retrieve the stored JWT token from AsyncStorage.
+ * Retrieve the stored JWT token from secure storage.
  * Returns null if no token is stored.
  */
 export async function getToken(): Promise<string | null> {
-  return AsyncStorage.getItem(TOKEN_KEY);
+  return SecureStore.getItemAsync(TOKEN_KEY);
 }
 
 /**
@@ -91,7 +122,7 @@ export async function getCurrentUser(): Promise<User | null> {
     if (!response.ok) {
       // Token is invalid or expired -- clear it
       if (response.status === 401) {
-        await AsyncStorage.removeItem(TOKEN_KEY);
+        await SecureStore.deleteItemAsync(TOKEN_KEY);
       }
       return null;
     }
