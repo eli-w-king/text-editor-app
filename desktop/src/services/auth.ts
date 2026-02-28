@@ -65,7 +65,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
 }
 
 /**
- * Validate the current token by calling /api/auth/me.
+ * Validate the current token by calling GET /api/auth/me.
  * Returns the user if valid, null if invalid.
  */
 export async function validateToken(): Promise<User | null> {
@@ -97,6 +97,14 @@ export async function validateToken(): Promise<User | null> {
 }
 
 /**
+ * Get the current authenticated user by validating the stored token.
+ * Alias for validateToken -- used by AuthContext on mount.
+ */
+export async function getCurrentUser(): Promise<User | null> {
+  return validateToken();
+}
+
+/**
  * Log out by clearing stored auth data.
  */
 export function logout(): void {
@@ -112,7 +120,7 @@ export function getToken(): string | null {
 }
 
 /**
- * Get the stored user object.
+ * Get the stored user object from localStorage (no server call).
  */
 export function getStoredUser(): User | null {
   const raw = localStorage.getItem(USER_KEY);
