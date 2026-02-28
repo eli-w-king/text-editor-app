@@ -132,8 +132,23 @@ export default function Register() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
-  const { register, error, clearError, isLoading } = useAuth();
+  // isSubmitting tracks whether a register request is in-flight (separate
+  // from isLoading which only covers the initial session check on mount).
+  const { register, error, clearError, isSubmitting } = useAuth();
   const navigate = useNavigate();
+
+  // Disable submit when submitting or any required field is empty
+  const isSubmitDisabled = isSubmitting || !email.trim() || !password || !confirmPassword;
+
+  const clearFieldError = (field: string) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  };
 
   const validate = (): boolean => {
     const errors: Record<string, string> = {};
@@ -161,7 +176,7 @@ export default function Register() {
     if (!validate()) return;
 
     try {
-      await register(email, password);
+      await register(email.trim(), password);
       navigate('/');
     } catch {
       // Error is handled by AuthContext
@@ -191,20 +206,15 @@ export default function Register() {
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
-                if (fieldErrors.email) {
-                  setFieldErrors((prev) => {
-                    const next = { ...prev };
-                    delete next.email;
-                    return next;
-                  });
-                }
+                clearFieldError('email');
+                clearError();
               }}
               onFocus={() => setFocusedField('email')}
               onBlur={() => setFocusedField(null)}
               style={getInputStyle('email')}
               placeholder="you@example.com"
               autoComplete="email"
-              disabled={isLoading}
+              disabled={isSubmitting}
             />
             {fieldErrors.email && <p style={styles.fieldError}>{fieldErrors.email}</p>}
           </div>
@@ -217,20 +227,15 @@ export default function Register() {
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
-                if (fieldErrors.password) {
-                  setFieldErrors((prev) => {
-                    const next = { ...prev };
-                    delete next.password;
-                    return next;
-                  });
-                }
+                clearFieldError('password');
+                clearError();
               }}
               onFocus={() => setFocusedField('password')}
               onBlur={() => setFocusedField(null)}
               style={getInputStyle('password')}
               placeholder="Create a password"
               autoComplete="new-password"
-              disabled={isLoading}
+              disabled={isSubmitting}
             />
             {fieldErrors.password ? (
               <p style={styles.fieldError}>{fieldErrors.password}</p>
@@ -247,20 +252,15 @@ export default function Register() {
               value={confirmPassword}
               onChange={(e) => {
                 setConfirmPassword(e.target.value);
-                if (fieldErrors.confirmPassword) {
-                  setFieldErrors((prev) => {
-                    const next = { ...prev };
-                    delete next.confirmPassword;
-                    return next;
-                  });
-                }
+                clearFieldError('confirmPassword');
+                clearError();
               }}
               onFocus={() => setFocusedField('confirmPassword')}
               onBlur={() => setFocusedField(null)}
               style={getInputStyle('confirmPassword')}
               placeholder="Re-enter your password"
               autoComplete="new-password"
-              disabled={isLoading}
+              disabled={isSubmitting}
             />
             {fieldErrors.confirmPassword && (
               <p style={styles.fieldError}>{fieldErrors.confirmPassword}</p>
@@ -271,11 +271,11 @@ export default function Register() {
             type="submit"
             style={{
               ...styles.button,
-              ...(isLoading ? styles.buttonDisabled : {}),
+              ...(isSubmitDisabled ? styles.buttonDisabled : {}),
             }}
-            disabled={isLoading}
+            disabled={isSubmitDisabled}
             onMouseEnter={(e) => {
-              if (!isLoading) {
+              if (!isSubmitDisabled) {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
                 e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)';
               }
@@ -285,7 +285,7 @@ export default function Register() {
               e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
             }}
           >
-            {isLoading ? 'Creating Account...' : 'Create Account'}
+            {isSubmitting ? 'Creating Account...' : 'Create Account'}
           </button>
         </form>
 

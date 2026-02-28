@@ -9,26 +9,49 @@
  * Set secret: npx wrangler secret put JWT_SECRET
  *
  * KV storage pattern:
- *   user:email:{email} -> JSON user object
- *   user:id:{id}       -> JSON user object
+ *   user:email:{email}            -> JSON user object
+ *   user:id:{id}                  -> JSON user object
+ *   ratelimit:{ip}:{action}       -> attempt count (auto-expires via TTL)
+ *
+ * Security features:
+ *   - PBKDF2-SHA256 password hashing (100k iterations)
+ *   - Timing-safe password comparison
+ *   - IP-based rate limiting on login/register
+ *   - Request body size limits (10KB max)
+ *   - Input validation with length bounds
+ *   - Global error handler (no stack trace leaks)
+ *   - 405 responses for wrong HTTP methods
+ *   - No secrets or config details in responses
  */
 
-// TODO: Add rate limiting for login/register endpoints to prevent brute-force attacks.
-// Consider using a sliding window counter in KV with TTL-based expiration.
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const MAX_REQUEST_BODY_BYTES = 10 * 1024; // 10 KB
+const MAX_EMAIL_LENGTH = 254; // RFC 5321
+const MAX_PASSWORD_LENGTH = 128;
+const MIN_PASSWORD_LENGTH = 8;
+
+// Rate limit settings (per IP, per action, approximate via KV TTL)
+const RATE_LIMIT_LOGIN_MAX = 10; // max attempts per window
+const RATE_LIMIT_REGISTER_MAX = 5;
+const RATE_LIMIT_WINDOW_SECONDS = 60; // 1 minute window
 
 // ---------------------------------------------------------------------------
 // CORS
 // ---------------------------------------------------------------------------
 
-// CORS headers for cross-origin requests (MVP: allow all origins)
+// CORS headers for cross-origin requests.
+// MVP: allow all origins. In production, restrict to your app's domain(s).
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*', // In production, restrict this to your app's domain
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 /**
- * Handle preflight OPTIONS requests
+ * Handle preflight OPTIONS requests.
  */
 function handleOptions() {
   return new Response(null, {
@@ -68,6 +91,79 @@ function generateUUID() {
     hex.slice(16, 20),
     hex.slice(20, 32),
   ].join('-');
+}
+
+/**
+ * Get the client IP from the request.
+ * Cloudflare Workers provide CF-Connecting-IP automatically.
+ */
+function getClientIP(request) {
+  return request.headers.get('CF-Connecting-IP') || 'unknown';
+}
+
+// ---------------------------------------------------------------------------
+// Rate Limiting (KV-based, approximate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Check and increment rate limit for a given IP and action.
+ * Uses USERS_KV with TTL for automatic expiration.
+ *
+ * Returns true if the request is allowed, false if rate-limited.
+ *
+ * Note: KV reads/writes are eventually consistent, so this is approximate.
+ * For strict rate limiting, consider Durable Objects. This is sufficient for
+ * brute-force prevention on an MVP.
+ */
+async function checkRateLimit(env, ip, action, maxAttempts) {
+  const key = `ratelimit:${ip}:${action}`;
+
+  try {
+    const current = await env.USERS_KV.get(key);
+    const count = current ? parseInt(current, 10) : 0;
+
+    if (count >= maxAttempts) {
+      return false;
+    }
+
+    // Increment counter with TTL
+    await env.USERS_KV.put(key, String(count + 1), {
+      expirationTtl: RATE_LIMIT_WINDOW_SECONDS,
+    });
+
+    return true;
+  } catch {
+    // If rate limiting fails (KV error), allow the request through
+    // rather than blocking legitimate users.
+    return true;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Request body parsing with size limits
+// ---------------------------------------------------------------------------
+
+/**
+ * Safely parse a JSON request body with size limits.
+ * Returns { data, error } where error is a Response if parsing failed.
+ */
+async function parseJsonBody(request) {
+  // Check Content-Length header for early rejection
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength && parseInt(contentLength, 10) > MAX_REQUEST_BODY_BYTES) {
+    return { data: null, error: jsonResponse({ error: 'Request body too large' }, 413) };
+  }
+
+  try {
+    const text = await request.text();
+    if (text.length > MAX_REQUEST_BODY_BYTES) {
+      return { data: null, error: jsonResponse({ error: 'Request body too large' }, 413) };
+    }
+    const data = JSON.parse(text);
+    return { data, error: null };
+  } catch {
+    return { data: null, error: jsonResponse({ error: 'Invalid JSON body' }, 400) };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +208,7 @@ async function hashPassword(password) {
 
 /**
  * Verify a password against a stored hash and salt.
+ * Uses timing-safe comparison to prevent timing attacks.
  */
 async function verifyPassword(password, storedHash, storedSalt) {
   const salt = base64ToUint8Array(storedSalt);
@@ -141,16 +238,21 @@ async function verifyPassword(password, storedHash, storedSalt) {
 
 /**
  * Constant-time string comparison to prevent timing attacks.
+ *
+ * Always iterates over the full length of the longer string to prevent
+ * leaking length information through timing. The lengthMismatch flag
+ * ensures different-length strings always return false without short-circuiting.
  */
 function timingSafeEqual(a, b) {
-  if (a.length !== b.length) {
-    return false;
-  }
+  const maxLen = Math.max(a.length, b.length);
+  let lengthMismatch = a.length !== b.length ? 1 : 0;
   let mismatch = 0;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < maxLen; i++) {
+    const charA = i < a.length ? a.charCodeAt(i) : 0;
+    const charB = i < b.length ? b.charCodeAt(i) : 0;
+    mismatch |= charA ^ charB;
   }
-  return mismatch === 0;
+  return (mismatch | lengthMismatch) === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +294,6 @@ function base64urlEncode(str) {
  * Base64url decode a string.
  */
 function base64urlDecode(str) {
-  // Re-add padding
   str = str.replace(/-/g, '+').replace(/_/g, '/');
   while (str.length % 4) {
     str += '=';
@@ -247,45 +348,55 @@ async function createJWT(payload, secret) {
 
 /**
  * Verify and decode a JWT. Returns the payload or null if invalid/expired.
+ * Wrapped in try/catch to safely handle any malformed input.
  */
 async function verifyJWT(token, secret) {
-  const parts = token.split('.');
-  if (parts.length !== 3) {
+  try {
+    if (!token || typeof token !== 'string') {
+      return null;
+    }
+
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const [encodedHeader, encodedPayload, encodedSignature] = parts;
+    const signingInput = `${encodedHeader}.${encodedPayload}`;
+
+    const key = await getSigningKey(secret);
+
+    // Reconstruct signature bytes
+    const signatureStr = base64urlDecode(encodedSignature);
+    const signatureBytes = new Uint8Array(signatureStr.length);
+    for (let i = 0; i < signatureStr.length; i++) {
+      signatureBytes[i] = signatureStr.charCodeAt(i);
+    }
+
+    const valid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      signatureBytes,
+      new TextEncoder().encode(signingInput),
+    );
+
+    if (!valid) {
+      return null;
+    }
+
+    const payload = JSON.parse(base64urlDecode(encodedPayload));
+
+    // Check expiration
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    // Catch any decoding/parsing errors and return null
     return null;
   }
-
-  const [encodedHeader, encodedPayload, encodedSignature] = parts;
-  const signingInput = `${encodedHeader}.${encodedPayload}`;
-
-  const key = await getSigningKey(secret);
-
-  // Reconstruct signature bytes
-  const signatureStr = base64urlDecode(encodedSignature);
-  const signatureBytes = new Uint8Array(signatureStr.length);
-  for (let i = 0; i < signatureStr.length; i++) {
-    signatureBytes[i] = signatureStr.charCodeAt(i);
-  }
-
-  const valid = await crypto.subtle.verify(
-    'HMAC',
-    key,
-    signatureBytes,
-    new TextEncoder().encode(signingInput),
-  );
-
-  if (!valid) {
-    return null;
-  }
-
-  const payload = JSON.parse(base64urlDecode(encodedPayload));
-
-  // Check expiration
-  const now = Math.floor(Date.now() / 1000);
-  if (payload.exp && payload.exp < now) {
-    return null;
-  }
-
-  return payload;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,19 +404,23 @@ async function verifyJWT(token, secret) {
 // ---------------------------------------------------------------------------
 
 /**
- * Validate an email address format.
+ * Validate an email address format and length.
+ * Max: 254 characters per RFC 5321.
  */
 function isValidEmail(email) {
-  // Basic but reasonable email regex
+  if (typeof email !== 'string') return false;
+  if (email.length > MAX_EMAIL_LENGTH) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return typeof email === 'string' && emailRegex.test(email);
+  return emailRegex.test(email);
 }
 
 /**
- * Validate password meets minimum requirements.
+ * Validate password meets minimum and maximum length requirements.
+ * Min: 8 characters. Max: 128 characters.
  */
 function isValidPassword(password) {
-  return typeof password === 'string' && password.length >= 8;
+  if (typeof password !== 'string') return false;
+  return password.length >= MIN_PASSWORD_LENGTH && password.length <= MAX_PASSWORD_LENGTH;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,12 +434,15 @@ function isValidPassword(password) {
  * Validates input, checks for existing user, creates user in KV, returns JWT.
  */
 async function handleRegister(request, env) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400);
+  // Rate limit check
+  const ip = getClientIP(request);
+  const allowed = await checkRateLimit(env, ip, 'register', RATE_LIMIT_REGISTER_MAX);
+  if (!allowed) {
+    return jsonResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
+
+  const { data: body, error: parseError } = await parseJsonBody(request);
+  if (parseError) return parseError;
 
   const { email, password } = body;
 
@@ -336,7 +454,7 @@ async function handleRegister(request, env) {
   // Validate password
   if (!password || !isValidPassword(password)) {
     return jsonResponse(
-      { error: 'Password must be at least 8 characters long' },
+      { error: `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters long` },
       400,
     );
   }
@@ -371,7 +489,8 @@ async function handleRegister(request, env) {
   // Generate JWT
   const jwtSecret = env.JWT_SECRET;
   if (!jwtSecret) {
-    return jsonResponse({ error: 'Server configuration error: JWT_SECRET not set' }, 500);
+    // Do not reveal which config is missing to external callers
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 
   const token = await createJWT({ sub: userId, email: normalizedEmail }, jwtSecret);
@@ -393,17 +512,25 @@ async function handleRegister(request, env) {
  * Looks up user by email, verifies password, returns JWT.
  */
 async function handleLogin(request, env) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400);
+  // Rate limit check
+  const ip = getClientIP(request);
+  const allowed = await checkRateLimit(env, ip, 'login', RATE_LIMIT_LOGIN_MAX);
+  if (!allowed) {
+    return jsonResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
+
+  const { data: body, error: parseError } = await parseJsonBody(request);
+  if (parseError) return parseError;
 
   const { email, password } = body;
 
   if (!email || !password) {
     return jsonResponse({ error: 'Email and password are required' }, 400);
+  }
+
+  // Validate types to prevent unexpected behavior
+  if (typeof email !== 'string' || typeof password !== 'string') {
+    return jsonResponse({ error: 'Email and password must be strings' }, 400);
   }
 
   const normalizedEmail = email.toLowerCase().trim();
@@ -426,7 +553,7 @@ async function handleLogin(request, env) {
   // Generate JWT
   const jwtSecret = env.JWT_SECRET;
   if (!jwtSecret) {
-    return jsonResponse({ error: 'Server configuration error: JWT_SECRET not set' }, 500);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 
   const token = await createJWT({ sub: user.id, email: user.email }, jwtSecret);
@@ -454,11 +581,14 @@ async function handleMe(request, env) {
     return jsonResponse({ error: 'Missing or invalid Authorization header' }, 401);
   }
 
-  const token = authHeader.slice(7); // Remove "Bearer "
+  const token = authHeader.slice(7).trim();
+  if (!token) {
+    return jsonResponse({ error: 'Missing or invalid Authorization header' }, 401);
+  }
 
   const jwtSecret = env.JWT_SECRET;
   if (!jwtSecret) {
-    return jsonResponse({ error: 'Server configuration error: JWT_SECRET not set' }, 500);
+    return jsonResponse({ error: 'Internal server error' }, 500);
   }
 
   // Verify and decode JWT
@@ -485,14 +615,13 @@ async function handleMe(request, env) {
 }
 
 /**
- * Health check endpoint
+ * Health check endpoint.
+ * Does not leak internal configuration details.
  */
-function handleHealth(env) {
-  const hasSecret = !!env.JWT_SECRET;
+function handleHealth() {
   return jsonResponse({
     status: 'ok',
     service: 'writer-app-auth',
-    configured: hasSecret,
     timestamp: new Date().toISOString(),
   });
 }
@@ -503,30 +632,49 @@ function handleHealth(env) {
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+    try {
+      const url = new URL(request.url);
+      const path = url.pathname;
 
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return handleOptions();
-    }
+      // Handle CORS preflight
+      if (request.method === 'OPTIONS') {
+        return handleOptions();
+      }
 
-    // Route requests
-    switch (true) {
-      case path === '/' || path === '/health':
-        return handleHealth(env);
+      // Health check (GET only)
+      if (path === '/' || path === '/health') {
+        if (request.method !== 'GET') {
+          return jsonResponse({ error: 'Method not allowed' }, 405);
+        }
+        return handleHealth();
+      }
 
-      case path === '/api/auth/register' && request.method === 'POST':
+      // Auth routes
+      if (path === '/api/auth/register') {
+        if (request.method !== 'POST') {
+          return jsonResponse({ error: 'Method not allowed' }, 405);
+        }
         return handleRegister(request, env);
+      }
 
-      case path === '/api/auth/login' && request.method === 'POST':
+      if (path === '/api/auth/login') {
+        if (request.method !== 'POST') {
+          return jsonResponse({ error: 'Method not allowed' }, 405);
+        }
         return handleLogin(request, env);
+      }
 
-      case path === '/api/auth/me' && request.method === 'GET':
+      if (path === '/api/auth/me') {
+        if (request.method !== 'GET') {
+          return jsonResponse({ error: 'Method not allowed' }, 405);
+        }
         return handleMe(request, env);
+      }
 
-      default:
-        return jsonResponse({ error: 'Not found' }, 404);
+      return jsonResponse({ error: 'Not found' }, 404);
+    } catch {
+      // Global error handler: never leak internal details or stack traces
+      return jsonResponse({ error: 'Internal server error' }, 500);
     }
   },
 };

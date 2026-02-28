@@ -124,12 +124,25 @@ const linkStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 export default function Login() {
-  const { login, error, clearError, isLoading } = useAuth();
+  const { login, error, clearError, isSubmitting } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  const canSubmit = email.trim().length > 0 && password.length > 0 && !isSubmitting;
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value);
+    // Clear errors when user starts typing
+    if (error) clearError();
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (error) clearError();
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -141,7 +154,7 @@ export default function Login() {
       await login(email.trim(), password);
       navigate('/');
     } catch {
-      // Error is handled by AuthContext
+      // Error is handled by AuthContext and displayed via error state
     }
   };
 
@@ -165,12 +178,13 @@ export default function Login() {
               id="login-email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={handleEmailChange}
               onFocus={() => setFocusedField('email')}
               onBlur={() => setFocusedField(null)}
               style={getInputStyle('email')}
               placeholder="you@example.com"
               autoComplete="email"
+              disabled={isSubmitting}
               required
             />
           </div>
@@ -181,12 +195,13 @@ export default function Login() {
               id="login-password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={handlePasswordChange}
               onFocus={() => setFocusedField('password')}
               onBlur={() => setFocusedField(null)}
               style={getInputStyle('password')}
               placeholder="Enter your password"
               autoComplete="current-password"
+              disabled={isSubmitting}
               required
             />
           </div>
@@ -195,11 +210,11 @@ export default function Login() {
             type="submit"
             style={{
               ...buttonStyle,
-              ...(isLoading ? buttonDisabledStyle : {}),
+              ...(!canSubmit ? buttonDisabledStyle : {}),
             }}
-            disabled={isLoading}
+            disabled={!canSubmit}
           >
-            {isLoading ? 'Signing in...' : 'Sign In'}
+            {isSubmitting ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 

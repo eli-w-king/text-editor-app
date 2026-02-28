@@ -7,6 +7,9 @@ binding = "USERS_KV"
 id = "placeholder-id"
 preview_id = "placeholder-preview-id"
 
+# Rate limit keys are stored in USERS_KV with TTL-based expiration.
+# Keys use the pattern: ratelimit:{ip}:{action}
+
 # JWT_SECRET must be set via: npx wrangler secret put JWT_SECRET
 # Do NOT put the secret in this file.
 
