@@ -14,9 +14,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { actions } from 'react-native-pell-rich-editor';
 
-// Formatting buttons configuration
-// Each button maps to a react-native-pell-rich-editor action.
-// Types: 'text' renders a styled label, 'icon' renders an Ionicon, 'divider' renders a separator.
 const TOOLBAR_BUTTONS = [
   { action: actions.setBold, label: 'B', style: { fontWeight: '700' }, type: 'text' },
   { action: actions.setItalic, label: 'I', style: { fontStyle: 'italic' }, type: 'text' },
@@ -32,23 +29,11 @@ const TOOLBAR_BUTTONS = [
   { action: actions.blockquote, icon: 'chatbubble-outline', type: 'icon' },
 ];
 
-/**
- * FormattingToolbar - A frosted glass formatting toolbar for the rich text editor.
- *
- * Props:
- *   editorRef - ref to the RichEditor from react-native-pell-rich-editor
- *   theme     - 'light' | 'dark' current app theme
- *   visible   - boolean, whether the toolbar is shown (typically when editor is focused)
- *
- * The toolbar slides in/out from the bottom using Animated translateY.
- * It uses BlurView for the frosted glass effect matching the app's FloatingMenu aesthetic.
- */
 export default function FormattingToolbar({ editorRef, theme, visible }) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(100)).current;
   const isDark = theme === 'dark';
 
-  // Animate toolbar in/out based on visibility
   useEffect(() => {
     Animated.timing(translateY, {
       toValue: visible ? 0 : 100,
@@ -57,7 +42,6 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
     }).start();
   }, [visible]);
 
-  // Generic action handler for formatting buttons
   const handleAction = (button) => {
     if (!editorRef?.current) return;
 
@@ -69,7 +53,6 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
     editorRef.current.sendAction(button.action, 'result');
   };
 
-  // Link insertion with platform-specific URL prompt
   const handleLink = () => {
     if (Platform.OS === 'ios') {
       Alert.prompt(
@@ -81,7 +64,6 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
             text: 'Insert',
             onPress: (url) => {
               if (url && url.trim()) {
-                // Ensure URL has a protocol prefix
                 const fullUrl = url.startsWith('http') ? url : `https://${url}`;
                 editorRef.current?.insertLink('Link', fullUrl);
               }
@@ -97,7 +79,6 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
     }
   };
 
-  // Theme-dependent colors matching the app's frosted glass aesthetic
   const bgColor = isDark ? 'rgba(40,40,42,0.5)' : 'rgba(255,255,255,0.3)';
   const iconColor = isDark ? '#ECEDEE' : '#1C1C1E';
   const borderColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
@@ -109,28 +90,22 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
         styles.wrapper,
         {
           transform: [{ translateY }],
-          // Bottom padding accounts for iPhone home bar via SafeAreaInsets
           paddingBottom: Math.max(insets.bottom, 8),
         },
       ]}
       pointerEvents={visible ? 'auto' : 'none'}
     >
-      {/* Frosted glass background - matches FloatingMenu aesthetic */}
       <BlurView
         intensity={40}
         tint={isDark ? 'dark' : 'light'}
         style={[StyleSheet.absoluteFill, { backgroundColor: bgColor }]}
       />
-
-      {/* Subtle top border */}
       <View
         style={[
           styles.topBorder,
           { borderTopColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
         ]}
       />
-
-      {/* Horizontal scrollable button row */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -138,7 +113,6 @@ export default function FormattingToolbar({ editorRef, theme, visible }) {
         keyboardShouldPersistTaps="always"
       >
         {TOOLBAR_BUTTONS.map((button, index) => {
-          // Render divider separators between button groups
           if (button.type === 'divider') {
             return (
               <View
@@ -187,7 +161,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   scrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     alignItems: 'center',
     gap: 8,

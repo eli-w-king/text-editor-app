@@ -68,7 +68,7 @@ export default function SaveIndicator({ status, theme }) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 8,
     paddingVertical: 2,
   },
   text: {

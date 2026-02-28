@@ -1,4 +1,5 @@
 import React, { useState, FormEvent } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 // ---------------------------------------------------------------------------
@@ -87,19 +88,6 @@ const buttonDisabledStyle: React.CSSProperties = {
   cursor: 'not-allowed',
 };
 
-const linkStyle: React.CSSProperties = {
-  color: 'rgba(255, 255, 255, 0.6)',
-  fontSize: 14,
-  textAlign: 'center' as const,
-  marginTop: 24,
-  cursor: 'pointer',
-  background: 'none',
-  border: 'none',
-  textDecoration: 'underline',
-  display: 'block',
-  width: '100%',
-};
-
 const errorStyle: React.CSSProperties = {
   background: 'rgba(255, 59, 48, 0.15)',
   border: '1px solid rgba(255, 59, 48, 0.3)',
@@ -114,16 +102,30 @@ const fieldGroupStyle: React.CSSProperties = {
   marginBottom: 20,
 };
 
+const footerStyle: React.CSSProperties = {
+  textAlign: 'center' as const,
+  marginTop: 24,
+  fontSize: 14,
+  color: 'rgba(236, 237, 238, 0.5)',
+  fontFamily: 'system-ui, -apple-system, sans-serif',
+};
+
+const linkStyle: React.CSSProperties = {
+  color: 'rgba(236, 237, 238, 0.9)',
+  textDecoration: 'none',
+  fontWeight: 500,
+  borderBottom: '1px solid rgba(236, 237, 238, 0.3)',
+  paddingBottom: '1px',
+  transition: 'border-color 0.2s ease',
+};
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-interface LoginProps {
-  onSwitchToRegister?: () => void;
-}
-
-export default function Login({ onSwitchToRegister }: LoginProps) {
+export default function Login() {
   const { login, error, clearError, isLoading } = useAuth();
+  const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -137,6 +139,7 @@ export default function Login({ onSwitchToRegister }: LoginProps) {
 
     try {
       await login(email.trim(), password);
+      navigate('/');
     } catch {
       // Error is handled by AuthContext
     }
@@ -200,11 +203,12 @@ export default function Login({ onSwitchToRegister }: LoginProps) {
           </button>
         </form>
 
-        {onSwitchToRegister && (
-          <button style={linkStyle} onClick={onSwitchToRegister} type="button">
-            Don't have an account? Create one
-          </button>
-        )}
+        <p style={footerStyle}>
+          Don't have an account?{' '}
+          <Link to="/register" style={linkStyle}>
+            Create one
+          </Link>
+        </p>
       </div>
     </div>
   );

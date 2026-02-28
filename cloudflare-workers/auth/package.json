@@ -12,6 +12,6 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "wrangler": "^4.54.0"
+    "wrangler": "4.69.0"
   }
 }

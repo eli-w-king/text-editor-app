@@ -8,13 +8,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Dimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface LoginScreenProps {
   onSwitchToRegister: () => void;
@@ -118,7 +115,8 @@ export default function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
                 activeOpacity={0.6}
               >
                 <Text style={styles.switchText}>
-                  Don't have an account? <Text style={styles.switchLink}>Create one</Text>
+                  {"Don't have an account? "}
+                  <Text style={styles.switchLink}>Create one</Text>
                 </Text>
               </TouchableOpacity>
             </View>
